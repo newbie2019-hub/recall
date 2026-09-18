@@ -169,6 +169,26 @@ export class ApiClient {
     return this.request<Session['user']>('auth/me', { idempotent: true })
   }
 
+  /**
+   * Delete the account and everything the server holds for it.
+   *
+   * Requires the password again: the token in this browser is enough to study
+   * with and not enough to end an account with, and the person asking may not
+   * be the person who left the session open.
+   *
+   * Local rows are untouched — deletion is the server's copy. Whether this
+   * device also erases is a separate choice the caller already made.
+   */
+  async deleteAccount(password: string): Promise<void> {
+    try {
+      await this.request('account', { method: 'DELETE', body: { password } })
+    } finally {
+      // The account is gone either way; a token that outlives it is only a
+      // way for the next screen to act as though it is still signed in.
+      await this.options.tokens.clear()
+    }
+  }
+
   devices(): Promise<DeviceSummary[]> {
     return this.request<DeviceSummary[]>('devices', { idempotent: true })
   }

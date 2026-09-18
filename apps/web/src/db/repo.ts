@@ -389,8 +389,14 @@ export async function createDeck(name: string, parentId: string | null = null): 
   if (!clean) throw new Error('A deck needs a name')
   const deckId = id()
   try {
+    // The defaults come from settings rather than being literals here, read in
+    // the same statement so a new deck cannot race a preference change. Both
+    // are clamped on write by setSchedulingDefaults; COALESCE covers the
+    // collection that has never opened settings at all.
     await db.run(
-      'INSERT INTO decks (id, parent_id, name, retention_target, new_per_day) VALUES (?,?,?,0.9,20)',
+      `INSERT INTO decks (id, parent_id, name, retention_target, new_per_day) VALUES (?,?,?,
+         COALESCE((SELECT CAST(value AS REAL)    FROM sync_state WHERE key = 'pref.scheduling.retention'),   0.9),
+         COALESCE((SELECT CAST(value AS INTEGER) FROM sync_state WHERE key = 'pref.scheduling.new_per_day'), 20))`,
       [deckId, parentId, clean],
     )
   } catch (e) {
