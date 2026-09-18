@@ -1,0 +1,45 @@
+{
+  "name": "@recall/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "e2e": "node e2e/app.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/bodoni-moda": "^5.2.5",
+    "@fontsource-variable/ibm-plex-sans": "^5.2.5",
+    "@fontsource-variable/literata": "^5.2.5",
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "@hookform/resolvers": "^5.9.1",
+    "@recall/core": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "^3.50.1-build1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cn": "^0.3.0",
+    "fzstd": "^0.1.1",
+    "katex": "^0.18.7",
+    "lucide-react": "^0.544.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.88.0",
+    "react-router": "^8.4.0",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tailwindcss": "^4.1.0",
+    "tw-animate-css": "^1.3.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.0"
+  }
+}

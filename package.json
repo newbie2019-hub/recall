@@ -1,0 +1,16 @@
+{
+  "name": "recall",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @recall/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test"
+  },
+  "packageManager": "pnpm@10.7.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

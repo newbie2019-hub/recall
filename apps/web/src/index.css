@@ -1,0 +1,160 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── "specimen label": H&E staining. See UI.md ──────────────────────────── */
+
+:root {
+  --radius: 0.125rem; /* near-square: card stock, not a SaaS pill */
+
+  --paper: #f4f2ed;
+  --ink: #1c1a17;
+  --ink-muted: #6b655c;
+  --rule: #dcd7cd;
+  --hematoxylin: #4a3d8f;
+  --eosin: #c75f7d;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #faf9f6;
+  --card-foreground: var(--ink);
+  --popover: #faf9f6;
+  --popover-foreground: var(--ink);
+  --primary: var(--hematoxylin);
+  --primary-foreground: #f4f2ed;
+  --secondary: #eae7e0;
+  --secondary-foreground: var(--ink);
+  --muted: #eae7e0;
+  --muted-foreground: var(--ink-muted);
+  --accent: #e9e4f2;
+  --accent-foreground: var(--hematoxylin);
+  --destructive: var(--eosin);
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--hematoxylin);
+
+  /* Answer buttons: Again is eosin (the odd one out); Hard→Easy is a single-hue
+     hematoxylin luminance ramp. Never a red-amber-green traffic light — ~8% of
+     males have red-green colour deficiency. */
+  --rate-again: #c75f7d;
+  --rate-again-fg: #fdf7f8;
+  --rate-hard: #cdc7e0;
+  --rate-hard-fg: #262040;
+  --rate-good: #6a5cb0;
+  --rate-good-fg: #f7f5fd;
+  --rate-easy: #4a3d8f;
+  --rate-easy-fg: #f4f2ed;
+}
+
+.dark {
+  --paper: #17161c;
+  --ink: #e8e4dc;
+  --ink-muted: #918b83;
+  --rule: #2a2833;
+  --hematoxylin: #9b8fe8;
+  --eosin: #e4899f;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #1e1c24;
+  --card-foreground: var(--ink);
+  --popover: #1e1c24;
+  --popover-foreground: var(--ink);
+  --primary: var(--hematoxylin);
+  --primary-foreground: #17161c;
+  --secondary: #262430;
+  --secondary-foreground: var(--ink);
+  --muted: #262430;
+  --muted-foreground: var(--ink-muted);
+  --accent: #2b2740;
+  --accent-foreground: var(--hematoxylin);
+  --destructive: var(--eosin);
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--hematoxylin);
+
+  --rate-again: #e4899f;
+  --rate-again-fg: #241318;
+  --rate-hard: #403c5c;
+  --rate-hard-fg: #ddd8f0;
+  --rate-good: #6e63b8;
+  --rate-good-fg: #f4f2fd;
+  --rate-easy: #9b8fe8;
+  --rate-easy-fg: #1a1626;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-hematoxylin: var(--hematoxylin);
+  --color-eosin: var(--eosin);
+  --color-rate-again: var(--rate-again);
+  --color-rate-again-fg: var(--rate-again-fg);
+  --color-rate-hard: var(--rate-hard);
+  --color-rate-hard-fg: var(--rate-hard-fg);
+  --color-rate-good: var(--rate-good);
+  --color-rate-good-fg: var(--rate-good-fg);
+  --color-rate-easy: var(--rate-easy);
+  --color-rate-easy-fg: var(--rate-easy-fg);
+
+  --radius-sm: calc(var(--radius) - 1px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-display: 'Bodoni Moda Variable', Georgia, serif;
+  --font-body: 'Literata Variable', Georgia, serif;
+  --font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Quality floor, unannounced. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ── Signature: the specimen tag ───────────────────────────────────────────
+   A flashcard is a specimen label. Hairline double rule, notched corner, real
+   catalog number. ~20 lines, reused on review / marketplace / authoring. */
+@utility specimen-tag {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  box-shadow: 0 0 0 1px var(--background), 0 0 0 2px var(--rule);
+  clip-path: polygon(1.25rem 0, 100% 0, 100% 100%, 0 100%, 0 1.25rem);
+}

@@ -1,0 +1,7 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  # apps/api is Laravel. Its package.json exists for Laravel's own Vite build and
+  # has nothing to do with the TypeScript workspace; including it would put
+  # `pnpm -r build` in charge of a PHP app's assets.
+  - '!apps/api'
