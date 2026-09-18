@@ -4,6 +4,7 @@ use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Http\Middleware\TouchTokenExpiry;
 use App\Support\ApiResponse;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -53,6 +54,13 @@ return Application::configure(basePath: dirname(__DIR__))
                 $e instanceof AuthenticationException => ApiResponse::error(
                     ApiErrorCode::Unauthenticated,
                     'Sign in again to keep syncing.',
+                ),
+                // Without this arm every 403 in the app leaves as Laravel's
+                // bare {message}, and a client that branches on stable error
+                // codes has nothing to branch on.
+                $e instanceof AuthorizationException => ApiResponse::error(
+                    ApiErrorCode::Forbidden,
+                    $e->getMessage() !== '' ? $e->getMessage() : 'Not allowed.',
                 ),
                 $e instanceof NotFoundHttpException => ApiResponse::error(
                     ApiErrorCode::NotFound,

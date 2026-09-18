@@ -18,6 +18,7 @@ import { Pomodoro } from './Pomodoro'
 import { AudioAutoplay } from './AudioAutoplay'
 import { RATING_SFX, sfx } from '@/lib/sfx'
 import * as repo from '@/db/repo'
+import { answerCard } from '@/db/queries/filtered'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { previewIntervals, type RatingValue } from '@recall/core'
 
@@ -90,7 +91,7 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
       busy.current = true
       answered.current = true
       try {
-        await repo.recordReview(sc, rating, Date.now() - shownAt.current)
+        await answerCard(sc, rating, Date.now() - shownAt.current)
         await load()
       } finally {
         busy.current = false

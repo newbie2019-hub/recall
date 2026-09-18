@@ -406,6 +406,8 @@ export interface DeckRow {
   new: number
   retention_target: number
   new_per_day: number
+  /** 1 for a filtered deck, whose cards are borrowed and go home when it empties. */
+  filtered: number
 }
 
 // ── deck management ──────────────────────────────────────────────
@@ -537,6 +539,25 @@ export const deleteDeck = (deckId: string, now = Date.now()) =>
   db.batch([
     // The subtree's decks, its notes and their card states, all read before
     // anything is removed — the cascade makes them unreachable afterwards.
+    {
+      // Borrowed cards go home first. Their notes live in other decks, so
+      // nothing cascades them — they would simply be left flagged as borrowed
+      // forever, never eligible for another filtered deck, with any template
+      // override lost. Here rather than in the filtered-deck code because every
+      // delete path routes through this one.
+      sql: `UPDATE cards
+               SET deck_id = CASE
+                     WHEN original_deck_id = (SELECT deck_id FROM notes WHERE notes.id = cards.note_id)
+                     THEN NULL ELSE original_deck_id END,
+                   original_deck_id = NULL,
+                   state_updated_at = ?
+             WHERE original_deck_id IS NOT NULL
+               AND deck_id IN (
+                 WITH RECURSIVE sub(id) AS (
+                   SELECT ? UNION ALL SELECT d.id FROM decks d JOIN sub ON d.parent_id = sub.id
+                 ) SELECT id FROM sub)`,
+      params: [now, deckId],
+    },
     tombstoneCards(
       `WITH RECURSIVE sub(id) AS (
          SELECT ? UNION ALL SELECT d.id FROM decks d JOIN sub ON d.parent_id = sub.id
@@ -648,7 +669,7 @@ export async function deckTree(now = Date.now()): Promise<DeckRow[]> {
            LEFT JOIN intro i ON i.id = d.id
        )
      SELECT t.id, t.parent_id, t.name, t.path, t.depth,
-            dk.retention_target, dk.new_per_day,
+            dk.retention_target, dk.new_per_day, dk.filtered,
             COALESCE(SUM(c.due), 0) AS due,
             COALESCE(SUM(c.new), 0) AS new
        FROM tree t

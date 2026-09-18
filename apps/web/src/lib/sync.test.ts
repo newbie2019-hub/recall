@@ -55,8 +55,11 @@ const seed: LocalBatch = {
     fma_id: 'FMA:7088', checksum: 12345, updated_at: 1200,
   }],
   card_states: [{
+    // Borrowed by a filtered deck: deck_id is where it is now, original_deck_id
+    // where it goes home to. The pair has to survive the round trip together.
     id: 'note-1:0', note_id: 'note-1', ord: 0, suspended: 1,
-    buried_until: null, flag: 2, deck_id: 'deck-2', state_updated_at: 1300,
+    buried_until: null, flag: 2, deck_id: 'deck-2', original_deck_id: 'deck-1',
+    state_updated_at: 1300,
   }],
   reviews: [{ id: 'rev-1', card_id: 'note-1:0', ts: 1400, rating: 3, duration_ms: 900, imported: 0 }],
   media: [{ sha256: 'ff00', mime: 'image/png', size: 12, created_at: 1500 }],
@@ -141,7 +144,8 @@ await (async () => {
   // the server in an argument with replayReviews().
   check('card_states carries only what a person decided',
     Object.keys(payload.card_states?.[0] ?? {}).sort(),
-    ['buried_until', 'client_updated_at', 'deck_id', 'flag', 'id', 'note_id', 'ord', 'suspended'])
+    ['buried_until', 'client_updated_at', 'deck_id', 'flag', 'id', 'note_id', 'ord',
+     'original_deck_id', 'suspended'])
 
   check('media goes up as metadata', payload.media, [
     { sha256: 'ff00', mime: 'image/png', size: 12, client_updated_at: 1500 },

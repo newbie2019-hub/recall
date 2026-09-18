@@ -11,10 +11,12 @@ import './index.css'
 // Applies the stored choice on import, which has to happen here rather than in
 // a component: a theme decided after first paint is a flash of the wrong one.
 import '@/lib/theme'
+import { registerServiceWorker } from '@/lib/pwa'
 import App from './App'
 
 // Local review rows are the only irreplaceable data on this device (PLAN.md §2.5).
 void navigator.storage?.persist?.()
+registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

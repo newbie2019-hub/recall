@@ -57,7 +57,13 @@ enum SyncResource: string
                 'sort_field', 'field_config', 'anki_extra', 'builtin',
             ],
             self::Notes => ['id', 'guid', 'note_type_id', 'deck_id', 'fields', 'tags', 'fma_id', 'checksum'],
-            self::CardStates => ['id', 'note_id', 'ord', 'suspended', 'buried_until', 'flag', 'deck_id'],
+            // `original_deck_id` travels with `deck_id` or neither means
+            // anything: a borrowed card that arrives without its home cannot be
+            // sent back when the filtered deck empties (Phase 7).
+            self::CardStates => [
+                'id', 'note_id', 'ord', 'suspended', 'buried_until', 'flag',
+                'deck_id', 'original_deck_id',
+            ],
             self::Reviews => ['id', 'card_id', 'client_ts', 'rating', 'duration_ms', 'imported'],
             self::Media => ['sha256', 'mime', 'size'],
         };

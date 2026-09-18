@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Contracts\Repositories\DeviceRepository;
+use App\Contracts\Repositories\ListingRepository;
 use App\Contracts\Repositories\SyncRepository;
 use App\Contracts\Repositories\UserRepository;
 use App\Repositories\Eloquent\EloquentDeviceRepository;
+use App\Repositories\Eloquent\EloquentListingRepository;
 use App\Repositories\Eloquent\EloquentSyncRepository;
 use App\Repositories\Eloquent\EloquentUserRepository;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +24,7 @@ class RepositoryServiceProvider extends ServiceProvider
     public array $bindings = [
         UserRepository::class => EloquentUserRepository::class,
         DeviceRepository::class => EloquentDeviceRepository::class,
+        ListingRepository::class => EloquentListingRepository::class,
         SyncRepository::class => EloquentSyncRepository::class,
     ];
 }

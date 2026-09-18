@@ -49,6 +49,7 @@ export interface NoteLocal {
 export interface CardStateLocal {
   id: string; note_id: string; ord: number; suspended: number
   buried_until: number | null; flag: number; deck_id: string | null
+  original_deck_id: string | null
   state_updated_at: number
 }
 
@@ -143,7 +144,8 @@ export async function collectLocal(since: number): Promise<LocalBatch> {
     // `cards`, but only the columns a person decided. due/stability/state are a
     // derived cache and are not the server's business (PHASES §5).
     db.select<CardStateLocal>(
-      `SELECT id, note_id, ord, suspended, buried_until, flag, deck_id, state_updated_at
+      `SELECT id, note_id, ord, suspended, buried_until, flag, deck_id, original_deck_id,
+              state_updated_at
          FROM cards WHERE state_updated_at > ?`, [since],
     ),
     db.select<ReviewLocal>(
@@ -282,11 +284,13 @@ export async function putNotes(rows: NoteLocal[]): Promise<void> {
  */
 const PUT_CARD_STATE = `INSERT INTO cards
     (id, note_id, ord, due, stability, difficulty, state, learning_steps, reps,
-     lapses, last_review, suspended, buried_until, flag, deck_id, state_updated_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     lapses, last_review, suspended, buried_until, flag, deck_id, original_deck_id,
+     state_updated_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   ON CONFLICT(id) DO UPDATE SET
     suspended = excluded.suspended, buried_until = excluded.buried_until,
     flag = excluded.flag, deck_id = excluded.deck_id,
+    original_deck_id = excluded.original_deck_id,
     state_updated_at = excluded.state_updated_at
   WHERE excluded.state_updated_at > cards.state_updated_at`
 
@@ -297,7 +301,8 @@ export const putCardStates = (rows: CardStateLocal[]): Promise<void> =>
       sql: PUT_CARD_STATE,
       params: [c.id, c.note_id, c.ord, fresh.due, fresh.stability, fresh.difficulty,
                fresh.state, fresh.learning_steps, fresh.reps, fresh.lapses, fresh.last_review,
-               c.suspended, c.buried_until, c.flag, c.deck_id, c.state_updated_at],
+               c.suspended, c.buried_until, c.flag, c.deck_id, c.original_deck_id,
+               c.state_updated_at],
     }
   }))
 

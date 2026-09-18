@@ -140,7 +140,11 @@ final readonly class SyncService
                 'user_id' => $user->id,
                 // The client's clock decides the order a person answered in; the
                 // server's decides anything the server rules on.
-                'client_ts' => $this->clamp($row['client_ts'] ?? $nowMs, $nowMs),
+                'client_ts' => $this->clamp(
+                    $row['client_ts'] ?? $nowMs,
+                    $nowMs,
+                    (bool) ($row['imported'] ?? false),
+                ),
                 'server_received_at' => $nowMs,
                 'revision' => $revision++,
                 'created_at' => $now,
@@ -227,8 +231,14 @@ final readonly class SyncService
         $out = [];
         foreach ($resource->writable() as $column) {
             if (array_key_exists($column, $row)) {
-                $value = $row[$column];
-                $out[$column] = is_array($value) ? json_encode($value) : $value;
+                // Passed through unchanged. Encoding an array here looked
+                // harmless and was not: `upsertMany` goes through
+                // `updateOrCreate`, so the model's `array` cast encodes it a
+                // second time and the column ends up holding a JSON string of
+                // JSON. A pull then hands the client a string where it expects
+                // an object, for `notes.fields` and every JSON column on
+                // `note_types`. The append-only insert path has no JSON columns.
+                $out[$column] = $row[$column];
             }
         }
 
@@ -269,9 +279,17 @@ final readonly class SyncService
      *
      * Clamped rather than replaced: the device's claim is still the best
      * evidence of the order things happened in (PLAN.md §2.6).
+     *
+     * An **imported** answer skips the floor. A real .apkg carries answers from
+     * 2015, and this app exists to keep that history — flooring them at the
+     * epoch would compress a decade of studying onto one afternoon and hand
+     * FSRS a story that never happened. The future is still capped either way:
+     * no answer was given after now.
      */
-    private function clamp(int|string $value, int $now): int
+    private function clamp(int|string $value, int $now, bool $imported = false): int
     {
-        return max(self::EPOCH_MS, min((int) $value, $now));
+        $value = min((int) $value, $now);
+
+        return $imported ? $value : max(self::EPOCH_MS, $value);
     }
 }

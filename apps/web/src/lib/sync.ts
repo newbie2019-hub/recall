@@ -91,13 +91,14 @@ const noteDown = (c: SyncChange): NoteLocal => ({
 })
 
 /**
- * `card_states`, not `cards`. Seven columns go up and seven come back; `due`,
+ * `card_states`, not `cards`. Eight columns go up and eight come back; `due`,
  * `stability`, `difficulty`, `state`, `reps` and `lapses` are a cache
  * `replayReviews()` rebuilds and are none of the server's business (PHASES §5).
  */
 const cardStateUp = (c: CardStateLocal): SyncRow => ({
   id: c.id, note_id: c.note_id, ord: c.ord, suspended: !!c.suspended,
   buried_until: c.buried_until, flag: c.flag, deck_id: c.deck_id,
+  original_deck_id: c.original_deck_id,
   client_updated_at: c.state_updated_at,
 })
 
@@ -106,6 +107,7 @@ const cardStateDown = (c: SyncChange): CardStateLocal => ({
   suspended: bit(c.suspended),
   buried_until: c.buried_until == null ? null : Number(c.buried_until),
   flag: Number(c.flag ?? 0), deck_id: str(c.deck_id),
+  original_deck_id: str(c.original_deck_id),
   state_updated_at: Number(c.client_updated_at),
 })
 

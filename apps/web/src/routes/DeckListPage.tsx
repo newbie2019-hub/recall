@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { FolderPlus, Layers, MoreHorizontal, Plus } from 'lucide-react'
+import { Filter, FolderPlus, Layers, MoreHorizontal, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -52,6 +52,9 @@ export function DeckListPage() {
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" size="sm" onClick={() => setDeckDialog({ kind: 'create', parentId: null })}>
             <FolderPlus /> New deck
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate(paths.newFilteredDeck)}>
+            <Filter /> Custom study
           </Button>
           <Button variant="outline" size="sm" onClick={() => navigate(paths.noteTypes)}>
             <Layers /> Note types

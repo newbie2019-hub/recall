@@ -165,6 +165,82 @@ class SyncTest extends TestCase
             'and it is pulled to the boundary rather than zeroed');
     }
 
+    public function test_a_notes_fields_survive_the_round_trip_as_an_object(): void
+    {
+        // The regression this exists for: `writableOnly` encoded arrays, and the
+        // model's `array` cast encoded the result again, so the column held a
+        // JSON string of JSON and a pull handed the client a string where it
+        // expects an object. Nothing caught it because no test had ever pushed
+        // a note with fields in it.
+        $deck = $this->deck('Thorax', 1_700_000_100_000);
+        $noteType = [
+            'id' => (string) Str::uuid(),
+            'name' => 'Basic',
+            'fields' => ['Front', 'Back'],
+            'templates' => [['name' => 'Card 1', 'qfmt' => '{{Front}}', 'afmt' => '{{Back}}']],
+            'css' => '.card { font-size: 20px }',
+            'kind' => 'standard',
+            'sort_field' => 0,
+            'field_config' => [],
+            'anki_extra' => [],
+            'builtin' => false,
+            'client_updated_at' => 1_700_000_100_000,
+        ];
+        $note = [
+            'id' => (string) Str::uuid(),
+            'guid' => 'abc12345',
+            'note_type_id' => $noteType['id'],
+            'deck_id' => $deck['id'],
+            'fields' => ['Front' => 'aortic valve', 'Back' => 'between LV and aorta'],
+            'tags' => 'anatomy::thorax',
+            'client_updated_at' => 1_700_000_100_000,
+        ];
+
+        $this->push(['decks' => [$deck], 'note_types' => [$noteType], 'notes' => [$note]])->assertOk();
+
+        $pulled = $this->pull()->assertOk()->json('data.notes.0');
+        $this->assertSame(['Front' => 'aortic valve', 'Back' => 'between LV and aorta'], $pulled['fields']);
+
+        $pulledType = $this->pull()->json('data.note_types.0');
+        $this->assertSame(['Front', 'Back'], $pulledType['fields']);
+        $this->assertSame('{{Front}}', $pulledType['templates'][0]['qfmt']);
+    }
+
+    public function test_an_imported_answer_keeps_its_own_date_instead_of_being_floored(): void
+    {
+        // A .apkg carries answers from years before this app existed. Flooring
+        // them at the epoch would compress a decade of studying onto one
+        // afternoon and hand FSRS a history that never happened — which is the
+        // history Phase 4 exists to carry.
+        $inTwentyFifteen = 1_420_070_400_000;
+
+        $this->push(['reviews' => [[
+            'id' => 'card-id-here:0@'.$inTwentyFifteen,
+            'card_id' => 'card-id-here:0',
+            'client_ts' => $inTwentyFifteen,
+            'rating' => 3,
+            'imported' => true,
+        ]]])->assertOk();
+
+        $this->assertSame($inTwentyFifteen, (int) Review::first()->client_ts);
+    }
+
+    public function test_a_review_id_longer_than_a_uuid_is_accepted(): void
+    {
+        // An answer recorded here gets a UUID; one replayed out of an .apkg is
+        // `<note>:<ord>@<ts>`, which is longer than char(36) and is derived from
+        // its content precisely so a re-import cannot duplicate it.
+        $id = Str::uuid().':0@1420070400000';
+        $this->assertGreaterThan(36, strlen($id));
+
+        $this->push(['reviews' => [[
+            'id' => $id, 'card_id' => 'n:0', 'client_ts' => 1_420_070_400_000,
+            'rating' => 3, 'imported' => true,
+        ]]])->assertOk();
+
+        $this->assertSame($id, Review::first()->id);
+    }
+
     public function test_a_page_is_capped_on_total_rows_and_resumes_exactly(): void
     {
         $decks = [];
