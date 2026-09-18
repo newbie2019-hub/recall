@@ -1,4 +1,5 @@
 import { db } from './client'
+import { burySiblings, checkLeech } from './queries/stats'
 import {
   BUILTIN_NOTE_TYPES,
   DECK_OF,
@@ -10,6 +11,7 @@ import {
   mapFields,
   newCard,
   newGuid,
+  Rating,
   replayReviews,
   safeDeckName,
   splitDeckPath,
@@ -1051,6 +1053,16 @@ export async function recordReview(
     },
     { sql: UPDATE_CARD, params: updateParams(next) },
   ])
+
+  // Both of these live here rather than in the caller, and that is load-bearing
+  // for rule 4: `counts` and the deck badge are recomputed from `deckTree`
+  // straight after this resolves, so a sibling buried now disappears from the
+  // badge, the session counter and the study loop in the same instant. Move
+  // either call up into `Review.tsx` and the badge is computed from a query
+  // that ran before the bury — the deck says "3 due" and hands over two.
+  await burySiblings(sc.card.id, sc.card.note_id, now)
+  if (rating === Rating.Again) await checkLeech(sc.card.id, sc.card.note_id, {}, now)
+
   return next
 }
 

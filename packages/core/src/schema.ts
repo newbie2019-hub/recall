@@ -208,6 +208,15 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_pomodoro_started ON pomodoro_sessions(started_at);
 
+  -- Leeches and sibling burying, per deck because the right answer differs by
+  -- material: burying siblings is the point on a reversed language deck and
+  -- merely annoying on a deck of unrelated facts. Defaults are Anki's, so a
+  -- collection that never opens deck options behaves the way people expect.
+  ALTER TABLE decks ADD COLUMN leech_threshold INTEGER NOT NULL DEFAULT 8;
+  ALTER TABLE decks ADD COLUMN leech_action    TEXT    NOT NULL DEFAULT 'suspend';
+  ALTER TABLE decks ADD COLUMN bury_new        INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE decks ADD COLUMN bury_reviews    INTEGER NOT NULL DEFAULT 1;
+
   -- Per-deck, because a language deck is worth hearing and a pharmacology deck
   -- is not. Default off: an app that makes noise unprompted gets closed.
   ALTER TABLE decks ADD COLUMN audio_autoplay INTEGER NOT NULL DEFAULT 0;
