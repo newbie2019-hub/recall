@@ -25,7 +25,7 @@ export type SyncStatus =
  * credential and must die with this browser's storage. Clearing site data has
  * to sign you out; it must not silently resume a sync as somebody else.
  */
-const TOKEN_KEY = 'recall.token'
+export const TOKEN_KEY = 'recall.token'
 const DEVICE_KEY = 'recall.device_id'
 
 const localTokens: TokenStore = {

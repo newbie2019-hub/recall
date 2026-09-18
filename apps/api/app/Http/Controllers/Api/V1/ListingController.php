@@ -192,13 +192,21 @@ class ListingController extends Controller
         $latest = $listing->versions->first();
 
         if ($latest === null) {
-            return [];
+            return ['notes' => [], 'note_types' => []];
         }
 
-        /** @var array{notes?: list<array<string, mixed>>} $payload */
+        /** @var array{notes?: list<array<string, mixed>>, note_types?: list<array<string, mixed>>} $payload */
         $payload = json_decode($latest->payload, true, 512, JSON_THROW_ON_ERROR);
 
-        return array_slice($payload['notes'] ?? [], 0, self::PREVIEW_NOTES);
+        // The note types travel with the sample notes, because a card cannot be
+        // rendered without its templates. Without them the listing page has to
+        // download the whole version payload — megabytes — to draw three sample
+        // cards on a page anyone can open. A deck's type list is small next to
+        // its notes, so this is the cheap half.
+        return [
+            'notes' => array_slice($payload['notes'] ?? [], 0, self::PREVIEW_NOTES),
+            'note_types' => $payload['note_types'] ?? [],
+        ];
     }
 
     private function denyUnless(bool $allowed): void

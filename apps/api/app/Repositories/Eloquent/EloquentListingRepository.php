@@ -26,7 +26,18 @@ final class EloquentListingRepository implements ListingRepository
     {
         return Listing::query()
             ->browsable()
-            ->with('user:id,name')
+            // Without the columns named, `latestOfMany` selects `payload` too
+            // and a page of twenty tiles carries twenty whole decks. Qualified,
+            // because `latestOfMany` joins the table to itself and a bare
+            // `listing_id` is then ambiguous.
+            ->with(['user:id,name', 'latestVersionRow' => fn ($q) => $q->select([
+                'listing_versions.id',
+                'listing_versions.listing_id',
+                'listing_versions.version',
+                'listing_versions.semver',
+                'listing_versions.note_count',
+                'listing_versions.size_bytes',
+            ])])
             ->when($term !== null && $term !== '', function ($query) use ($term): void {
                 $query->where(function ($group) use ($term): void {
                     foreach (['title', 'description', 'tags'] as $column) {

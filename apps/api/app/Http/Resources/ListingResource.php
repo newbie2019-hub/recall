@@ -37,9 +37,18 @@ class ListingResource extends JsonResource
                 'name' => $this->user->name,
             ]),
             'versions' => ListingVersionResource::collection($this->whenLoaded('versions')),
+            // What a browse tile needs and nothing more. The detail page loads
+            // `versions` in full and gets the same numbers from there.
+            'note_count' => $this->whenLoaded('latestVersionRow', fn () => $this->latestVersionRow?->note_count),
+            'size_bytes' => $this->whenLoaded('latestVersionRow', fn () => $this->latestVersionRow?->size_bytes),
             // The publisher-facing state, and the reason behind it. Withheld from
             // everyone else: "removed for copyright" on a public page is a
             // finding about a person, published before they have answered it.
+            // The publisher's own deck id, so "my listings" can be matched to a
+            // local deck and the publish screen can say "this will be v2" rather
+            // than asking every time. Withheld from strangers: it is an id into
+            // somebody else's collection.
+            'deck_id' => $this->when($privileged, $this->deck_id),
             'status' => $this->when($privileged, $this->status),
             'open_report_count' => $this->when($privileged, $this->open_report_count),
             'moderation_reason' => $this->when($privileged, $this->moderation_reason),

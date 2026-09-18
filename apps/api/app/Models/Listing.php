@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * A deck offered to other people, in one of four states.
@@ -68,6 +69,19 @@ class Listing extends Model
     /**
      * @return HasMany<ListingVersion, $this>
      */
+    /**
+     * The newest version alone, for the browse tiles.
+     *
+     * `HasOne` over `latestOfMany` rather than loading `versions`: a tile needs
+     * a note count and a size, and eager-loading the whole relation would drag
+     * every version's `payload` — megabytes per listing, times a page of
+     * twenty — to print two numbers.
+     */
+    public function latestVersionRow(): HasOne
+    {
+        return $this->hasOne(ListingVersion::class)->latestOfMany('version');
+    }
+
     public function versions(): HasMany
     {
         return $this->hasMany(ListingVersion::class)->orderByDesc('version');

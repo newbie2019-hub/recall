@@ -1,13 +1,14 @@
 /**
  * The marketplace client. What is checked here is what a wrong answer costs:
  * a token leaked onto a public request, an error the screens cannot branch on,
- * and an update offered for a deck the person has since made their own.
+ * a guid that orphans every clone on its next update, and an update offered for
+ * a deck the person has since made their own.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ApiError } from '@recall/core'
 import {
-  formatBytes, getListing, listListings, reportListing, updateAvailable,
+  cloneGuid, formatBytes, getListing, listListings, reportListing, toNoteType, updateAvailable,
 } from './marketplace.ts'
 
 interface Call { url: string; init: RequestInit }
@@ -36,18 +37,25 @@ const header = (call: Call, name: string) =>
   (call.init.headers as Record<string, string> | undefined)?.[name]
 
 test('browse sends no Authorization when signed out — /explore is public', async () => {
-  const calls = stubFetch([envelope([], { next_cursor: 7 })])
-  const result = await listListings({ q: 'heart', sort: 'recent' })
+  const calls = stubFetch([envelope([], { next_cursor: 20 })])
+  const result = await listListings({ q: 'heart' })
 
   assert.equal(header(calls[0]!, 'Authorization'), undefined)
-  assert.match(calls[0]!.url, /marketplace\/listings\?q=heart&sort=recent$/)
-  assert.deepEqual(result, { items: [], next_cursor: 7 })
+  assert.match(calls[0]!.url, /marketplace\/listings\?q=heart$/)
+  assert.deepEqual(result, { items: [], next_cursor: 20 })
 })
 
 test('empty filters are left off the query rather than sent blank', async () => {
   const calls = stubFetch([envelope([])])
   await listListings({ q: '', tag: undefined })
   assert.ok(!calls[0]!.url.includes('?'), calls[0]!.url)
+})
+
+test('the preview rides beside `data`, not inside it', async () => {
+  stubFetch([envelope({ id: 'l1', title: 'Heart' }, { preview: [{ source_guid: 'g' }] })])
+  const { listing, preview } = await getListing('l1')
+  assert.equal(listing.title, 'Heart')
+  assert.equal(preview.length, 1)
 })
 
 test('a 403 becomes a forbidden ApiError, which is how moderation shows "not found"', async () => {
@@ -72,13 +80,46 @@ test('a gateway that answers HTML still reports its status', async () => {
   assert.equal(error.code, 'server_error')
 })
 
+/**
+ * The fixture is the server's own: `substr(hash('sha256', $deckId.':'.$sourceGuid), 0, 16)`
+ * in App\Services\Marketplace\CloneGuid. If these two ever disagree, every clone
+ * duplicates itself on its next update instead of merging.
+ */
+test('a cloned note gets the same guid the server would derive', async () => {
+  assert.equal(await cloneGuid('deck-1', 'upstream00000000'), '5eecef7ee291e766')
+  // Same note, two clones: different decks, so different guids and no collision.
+  assert.notEqual(
+    await cloneGuid('deck-1', 'upstream00000000'),
+    await cloneGuid('deck-2', 'upstream00000000'),
+  )
+  assert.match(await cloneGuid('deck-1', 'upstream00000000'), /^[0-9a-f]{16}$/)
+})
+
+test('a published note type is renamed into the core spelling, minus the deck override', () => {
+  const nt = toNoteType(
+    {
+      id: 'nt-1', name: 'Basic', fields: ['Front', 'Back'],
+      templates: [{ name: 'Card 1', qfmt: '{{Front}}', afmt: '{{Back}}', deckOverride: 'their-deck' }],
+      css: '.card{}', kind: 'standard', ord_field: null, sort_field: 1,
+      field_config: [], anki_extra: {},
+    },
+    'listing-9',
+  )
+
+  assert.equal(nt.id, 'market:listing-9:nt-1')
+  assert.equal(nt.sortField, 1)
+  assert.equal(nt.ordField, undefined)
+  // A deck override points into the publisher's tree and must not come across.
+  assert.equal(nt.templates[0]!.deckOverride, null)
+})
+
 test('an update is offered only when the clone is behind a known version', () => {
-  assert.equal(updateAvailable({ source_version: 1 }, { version: 2 }), true)
-  assert.equal(updateAvailable({ source_version: 2 }, { version: 2 }), false)
-  assert.equal(updateAvailable({ source_version: 3 }, { version: 2 }), false)
+  assert.equal(updateAvailable({ source_version: 1 }, { latest_version: 2 }), true)
+  assert.equal(updateAvailable({ source_version: 2 }, { latest_version: 2 }), false)
+  assert.equal(updateAvailable({ source_version: 3 }, { latest_version: 2 }), false)
   // Never cloned, and cloned before versions were recorded: both stay quiet.
-  assert.equal(updateAvailable(null, { version: 9 }), false)
-  assert.equal(updateAvailable({ source_version: null }, { version: 9 }), false)
+  assert.equal(updateAvailable(null, { latest_version: 9 }), false)
+  assert.equal(updateAvailable({ source_version: null }, { latest_version: 9 }), false)
 })
 
 test('sizes are quoted in the units the download screen promises', () => {
