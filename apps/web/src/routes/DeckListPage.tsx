@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DeckDialog, type DeckDialogMode } from '@/components/DeckDialog'
 import { ApkgButtons } from '@/components/Apkg'
+import { AccountMenu } from '@/components/AccountMenu'
+import { SyncBanner } from '@/components/SyncBanner'
 import { useDecks } from '@/hooks/useDecks'
 import { paths } from './paths'
 
@@ -60,8 +62,10 @@ export function DeckListPage() {
               <Plus /> New note
             </Button>
           )}
+          <AccountMenu />
         </div>
       </header>
+      <SyncBanner />
 
       <ul className="mb-8">
         {decks?.map((d) => (

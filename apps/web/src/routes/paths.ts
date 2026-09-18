@@ -38,7 +38,16 @@ export const paths = {
   moderation: '/moderation',
 } as const
 
-/** Paths a signed-out visitor may open. Everything else redirects to sign-in. */
+/**
+ * Paths that mean something to a visitor with no account and no local
+ * collection — a reset link from an email, a deck someone shared.
+ *
+ * **Not a guard list.** Every other path is open too: signing in is a state and
+ * never a wall (PHASES §5), and nothing in this app redirects to sign-in. This
+ * exists so Phase 12 knows which URLs a cold universal link must be able to
+ * open, and for nothing else. If you are reading it while writing a route
+ * guard, stop — the guard is the bug.
+ */
 export const PUBLIC_PATHS = [
   paths.signIn, paths.signUp, paths.forgotPassword, paths.marketplace,
 ] as const

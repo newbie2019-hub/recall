@@ -136,6 +136,35 @@ export class ApiClient {
     }
   }
 
+  /**
+   * Ask for a reset link. Resolves the same way whether or not the address has
+   * an account — the server answers identically on purpose, so a caller that
+   * branched here would be inventing information it was not given.
+   */
+  forgotPassword(email: string): Promise<{ sent: boolean }> {
+    return this.request<{ sent: boolean }>('auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+      auth: false,
+    })
+  }
+
+  /**
+   * Spend a reset token. Not idempotent and never retried: the token is
+   * single-use, so a retry of a request that did land comes back "no longer
+   * valid" and reads as though the new password did not take.
+   *
+   * It issues no session — every device is signed out by a reset, including
+   * this one, so the caller sends the person to sign in with the new password.
+   */
+  resetPassword(input: { token: string; email: string; password: string }): Promise<{ reset: boolean }> {
+    return this.request<{ reset: boolean }>('auth/reset-password', {
+      method: 'POST',
+      body: input,
+      auth: false,
+    })
+  }
+
   me(): Promise<Session['user']> {
     return this.request<Session['user']>('auth/me', { idempotent: true })
   }

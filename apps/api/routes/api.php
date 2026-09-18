@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DeviceController;
+use App\Http\Controllers\Api\V1\PasswordResetController;
 use App\Http\Controllers\Api\V1\SyncController;
 use Illuminate\Support\Facades\Route;
 
@@ -21,6 +22,17 @@ Route::post('auth/register', [AuthController::class, 'register'])
 Route::post('auth/login', [AuthController::class, 'login'])
     ->middleware('throttle:10,1')
     ->name('auth.login');
+
+// Both are reached by somebody who cannot sign in, so both sit outside the
+// guard. Tighter throttles than login: these two send mail and are the pair an
+// attacker would use to enumerate addresses or grind a token.
+Route::post('auth/forgot-password', [PasswordResetController::class, 'send'])
+    ->middleware('throttle:5,1')
+    ->name('auth.forgot-password');
+
+Route::post('auth/reset-password', [PasswordResetController::class, 'reset'])
+    ->middleware('throttle:5,1')
+    ->name('auth.reset-password');
 
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
