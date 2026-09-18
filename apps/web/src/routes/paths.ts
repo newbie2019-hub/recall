@@ -19,4 +19,26 @@ export const paths = {
   forgotPassword: '/forgot-password',
   resetPassword: (token: string) => `/reset/${token}`,
   settings: (section = 'profile') => `/settings/${section}`,
+
+  // Phase 6 — the two screens heavy users live in, plus the focus timer.
+  browse: '/browse',
+  stats: '/stats',
+  pomodoro: '/pomodoro',
+
+  // Phase 7 — a filtered deck is a deck, so it reuses /decks/:id to study.
+  // Only building the search needs a screen of its own.
+  newFilteredDeck: '/decks/filtered/new',
+  editFilteredDeck: (id: string) => `/decks/${id}/filter`,
+
+  // Phase 8 — shareable, so these are the paths Phase 12's universal links
+  // resolve against. A listing id is public; a deck id is not.
+  marketplace: '/explore',
+  listing: (id: string) => `/explore/${id}`,
+  publishDeck: (deckId: string) => `/decks/${deckId}/publish`,
+  moderation: '/moderation',
 } as const
+
+/** Paths a signed-out visitor may open. Everything else redirects to sign-in. */
+export const PUBLIC_PATHS = [
+  paths.signIn, paths.signUp, paths.forgotPassword, paths.marketplace,
+] as const

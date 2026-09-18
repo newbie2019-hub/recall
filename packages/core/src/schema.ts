@@ -158,6 +158,70 @@ export const MIGRATIONS: string[] = [
   -- run once more, and the seeder now mints its own.
   UPDATE notes SET guid = lower(hex(randomblob(8))) WHERE guid IS NULL;
   `,
+
+  // 7 - everything phases 5-8 write against (sync, pomodoro, filtered decks,
+  //     marketplace). Written in one migration, before those phases are built,
+  //     because five parallel workstreams each appending their own migration is
+  //     how a collection ends up on a different user_version per developer.
+  `
+  -- Sync bookkeeping. A kv table rather than columns on a singleton row: the
+  -- cursor, the device id and the signed-in user are read and written
+  -- independently, and a kv row is the one shape that never needs a migration
+  -- when a sixth thing has to be remembered.
+  CREATE TABLE sync_state (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
+
+  -- A hard delete is invisible to a device that was offline when it happened,
+  -- and the row comes back on that device's next push. Mirrors the server's
+  -- tombstones (PHASES §5). Dropped once every device has moved past them.
+  CREATE TABLE tombstones (
+    resource   TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL,
+    synced     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (resource, key)
+  );
+  CREATE INDEX idx_tombstones_unsent ON tombstones(synced) WHERE synced = 0;
+
+  -- Last-write-wins needs a clock on every syncable row, not just notes.
+  -- Seeded to 0 rather than now(): a row that has never been edited must lose
+  -- to anything the server holds, and now() would make it win.
+  ALTER TABLE decks      ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE note_types ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+  -- cards is a derived cache, but the card_states *subset* - suspended,
+  -- buried_until, flag, deck_id - is what a person decided, so it syncs and
+  -- needs its own clock (PHASES §5, "card_states, not cards").
+  ALTER TABLE cards      ADD COLUMN state_updated_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE media      ADD COLUMN synced INTEGER NOT NULL DEFAULT 0;
+
+  -- Phase 6. Logged beside reviews so focus blocks can be correlated with
+  -- accuracy; ended_at NULL means a block still running.
+  CREATE TABLE pomodoro_sessions (
+    id         TEXT PRIMARY KEY,
+    deck_id    TEXT REFERENCES decks(id) ON DELETE SET NULL,
+    kind       TEXT NOT NULL DEFAULT 'focus',   -- focus | break
+    started_at INTEGER NOT NULL,
+    ended_at   INTEGER,
+    planned_ms INTEGER NOT NULL
+  );
+  CREATE INDEX idx_pomodoro_started ON pomodoro_sessions(started_at);
+
+  -- Phase 7. A filtered deck is a deck row with a search attached, so every
+  -- deck-scoped query, badge and study path already works on it unchanged.
+  -- Cards are *borrowed*: original_deck_id is where the card goes home to.
+  ALTER TABLE decks ADD COLUMN filtered      INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE decks ADD COLUMN filter_config TEXT;   -- JSON: search, limit, order, reschedule
+  ALTER TABLE cards ADD COLUMN original_deck_id TEXT REFERENCES decks(id);
+  CREATE INDEX idx_cards_original ON cards(original_deck_id) WHERE original_deck_id IS NOT NULL;
+
+  -- Phase 8. A cloned marketplace deck remembers where it came from, so an
+  -- update to the published deck can be offered rather than re-downloaded as a
+  -- second copy. NULL on every deck the user made themselves.
+  ALTER TABLE decks ADD COLUMN source_listing_id TEXT;
+  ALTER TABLE decks ADD COLUMN source_version    INTEGER;
+  `,
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length
