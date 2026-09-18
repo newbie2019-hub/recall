@@ -14,6 +14,9 @@ import {
 import { SpecimenTag } from './SpecimenTag'
 import { RatingBar } from './RatingBar'
 import { CardFrame } from './CardFrame'
+import { Pomodoro } from './Pomodoro'
+import { AudioAutoplay } from './AudioAutoplay'
+import { RATING_SFX, sfx } from '@/lib/sfx'
 import * as repo from '@/db/repo'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { previewIntervals, type RatingValue } from '@recall/core'
@@ -42,6 +45,7 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
   const load = useCallback(async () => {
     const [next, c] = await Promise.all([repo.nextCard(deckId), repo.counts(deckId)])
     setSc(next)
+    if (!next && answered.current) sfx('complete')
     setPainted(next ? await paint(next, '') : null)
     setCounts(c)
     setRevealed(false)
@@ -62,6 +66,9 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
 
   const reveal = useCallback(async () => {
     if (!sc || revealed) return
+    // Before the await, not after: the sound confirms the tap, and a
+    // confirmation that waits on a re-render is late enough to feel broken.
+    sfx('flip')
     // Re-render the back now that there is an answer to grade against.
     if (painted?.typeField) setPainted(await paint(sc, typed))
     setRevealed(true)
@@ -72,10 +79,16 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
   // reviews for the same card — and the log is the source of truth.
   const busy = useRef(false)
 
+  // Whether this session has actually answered anything, so the completion
+  // sound does not fire on mount for somebody who was already finished today.
+  const answered = useRef(false)
+
   const rate = useCallback(
     async (rating: RatingValue) => {
       if (!sc || !revealed || busy.current) return
+      sfx(RATING_SFX[rating])
       busy.current = true
+      answered.current = true
       try {
         await repo.recordReview(sc, rating, Date.now() - shownAt.current)
         await load()
@@ -88,6 +101,7 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
 
   const undo = useCallback(async () => {
     if (await repo.undoLast()) {
+      sfx('undo')
       await load()
       toast('Review undone')
     } else {
@@ -146,6 +160,8 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
         <span className="font-mono text-xs text-muted-foreground tabular-nums">
           {counts.done}/{total}
         </span>
+        <AudioAutoplay html={revealed ? painted.back : painted.front} deckId={deckId ?? null} />
+        <Pomodoro deckId={deckId ?? null} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm" aria-label="Card actions">

@@ -208,6 +208,10 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_pomodoro_started ON pomodoro_sessions(started_at);
 
+  -- Per-deck, because a language deck is worth hearing and a pharmacology deck
+  -- is not. Default off: an app that makes noise unprompted gets closed.
+  ALTER TABLE decks ADD COLUMN audio_autoplay INTEGER NOT NULL DEFAULT 0;
+
   -- Phase 7. A filtered deck is a deck row with a search attached, so every
   -- deck-scoped query, badge and study path already works on it unchanged.
   -- Cards are *borrowed*: original_deck_id is where the card goes home to.
