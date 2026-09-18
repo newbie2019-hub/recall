@@ -147,6 +147,38 @@ Explicitly rejected: the 3D card flip. It is the flashcard cliché, it costs
 here is the design decision, not an omission. `prefers-reduced-motion` drops even
 the dissolve.
 
+### Sound: the same budget, spent the same way
+
+Sound feedback on the review loop — the reveal, the four rating buttons, undo,
+session complete. It exists because the study loop is the one screen in this app
+where a person's eyes are on the card and not on the controls: a rating
+registers below where they are looking, and a sound is the cheapest honest
+confirmation that the answer landed.
+
+The rules are the motion rules, because it is the same restraint:
+
+- **Off by default**, with a toggle in Settings → Appearance. Sound is the
+  setting people are most often ambushed by, and an app that makes noise on
+  first launch in a library is an app that gets closed.
+- **Under 80 ms, and never a melody.** These are confirmations, not rewards.
+  Anything long enough to have a tune is long enough to get old by card fifty,
+  and at 200 cards a day every sound is heard 200 times.
+- **Again and Easy must be distinguishable**, and nothing else has to be. Those
+  two are the ones a person wants to catch out of the corner of their ear.
+- **Synthesised, not sampled.** WebAudio oscillators with a gain envelope — a
+  few lines each. Six `.mp3`s would cost bytes, a loading state, and a licence
+  question, to make the same click.
+- **Latency is the whole feature.** A flip sound 200 ms after the flip is worse
+  than silence. It plays from the handler that does the reveal, never from an
+  effect that fires after a state commit.
+- One `AudioContext` for the app, created lazily on the first gesture. A context
+  built at module load starts suspended and swallows its first sound.
+- Never when the tab is hidden.
+
+Not to be confused with **card audio** — `[sound:]` media inside a note, which is
+content, autoplays per deck option, and is owned by the parent because the card
+iframe has no scripts (rule 5).
+
 ---
 
 ## 4. Component map

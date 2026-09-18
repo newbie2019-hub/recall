@@ -275,6 +275,11 @@ existing note grow a card that keeps its history.
   account being signed into.** No prompt, nothing destroyed — but a borrowed
   device donates its history to whoever signs in next, which is the cost that was
   accepted knowingly.
+- ◻︎ **Who is signed in is visible from the app chrome**, not only from Settings.
+  Name, email and sync state in one glance, because "always adopt the local rows
+  into the account being signed into" means a borrowed device donates its
+  history — and the person holding it has to be able to see which account is
+  about to receive their reviews without navigating to find out.
 - ◻︎ **Settings:** profile · devices (revoke = sign out that phone) · storage
   (per-deck offline opt-in with size estimate) · scheduling defaults ·
   appearance (system/light/dark — there is no toggle today) · data export and
@@ -364,6 +369,12 @@ and signing out and back in never costs a card.
   once one is answered; the most-noticed missing behaviour on reversed decks.
 - **Audio autoplay** with a deck option, which needs the parent to own the audio
   element, the same shape as the type-in box.
+- **Sound feedback on the study loop** — reveal, the four ratings, undo, session
+  complete. Off by default, synthesised with WebAudio rather than shipped as
+  files, under 80 ms each, and played from the handler that does the reveal so
+  it is not late. Same restraint budget as the motion rules; written up in
+  [UI.md](UI.md) §3. Distinct from card `[sound:]` media above: that is content,
+  this is confirmation that a rating registered while the eyes were on the card.
 - Pomodoro 25/5, offline, logged beside reviews so focus blocks can be correlated
   with accuracy.
 
