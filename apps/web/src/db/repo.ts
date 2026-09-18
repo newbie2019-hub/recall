@@ -1,6 +1,7 @@
 import { db } from './client'
 import {
   BUILTIN_NOTE_TYPES,
+  DECK_OF,
   applyReview,
   clozeText,
   fieldChecksum,
@@ -150,18 +151,47 @@ export async function noteTypeUsage(noteTypeId: string): Promise<number> {
   return r?.n ?? 0
 }
 
-/** Every writable column of a note type, in the order `noteTypeParams` builds. */
+/**
+ * Mark a row as deliberately deleted, for every device that was not here.
+ *
+ * A hard delete is invisible to a device that was offline when it happened:
+ * that device still holds the row, pushes it on reconnect, and the deletion is
+ * quietly undone. The tombstone is what the push loop sends instead, and
+ * `synced = 0` on conflict, so a row deleted, restored and deleted again is
+ * announced each time rather than only the first.
+ *
+ * Reviews are absent on purpose — the log is append-only and nothing deletes
+ * from it (README, rule 1).
+ */
+const TOMBSTONE = `INSERT INTO tombstones (resource, key, deleted_at, synced) VALUES (?,?,?,0)
+  ON CONFLICT(resource, key) DO UPDATE SET deleted_at = excluded.deleted_at, synced = 0`
+
+/** The same, for rows arriving from a subquery rather than by name. */
+const tombstoneCards = (sql: string, params: unknown[]) => ({
+  sql: `INSERT INTO tombstones (resource, key, deleted_at, synced) ${sql}
+        ON CONFLICT(resource, key) DO UPDATE SET deleted_at = excluded.deleted_at, synced = 0`,
+  params,
+})
+
+/**
+ * Every writable column of a note type, in the order `noteTypeParams` builds.
+ *
+ * `updated_at` is in the list rather than spelled at each call site so that
+ * insert, update and upsert cannot drift: sync finds a changed note type by
+ * that column alone, and one write path that forgot to stamp it would be a
+ * type that silently never leaves the device.
+ */
 const NOTE_TYPE_COLUMNS = [
   'name', 'fields', 'templates', 'css', 'kind', 'ord_field',
-  'sort_field', 'field_config', 'anki_extra',
+  'sort_field', 'field_config', 'anki_extra', 'updated_at',
 ]
 const SET_NOTE_TYPE = NOTE_TYPE_COLUMNS.map((c) => `${c} = ?`).join(', ')
 const SET_FROM_EXCLUDED = NOTE_TYPE_COLUMNS.map((c) => `${c} = excluded.${c}`).join(', ')
 
-const noteTypeParams = (nt: NoteType) => [
+const noteTypeParams = (nt: NoteType, now = Date.now()) => [
   nt.name, JSON.stringify(nt.fields), JSON.stringify(nt.templates), nt.css, nt.kind,
   nt.ordField ?? null, nt.sortField ?? 0,
-  JSON.stringify(nt.fieldConfig ?? []), JSON.stringify(nt.ankiExtra ?? {}),
+  JSON.stringify(nt.fieldConfig ?? []), JSON.stringify(nt.ankiExtra ?? {}), now,
 ]
 
 /**
@@ -215,7 +245,7 @@ export async function saveNoteType(
   if (!next.templates.length) throw new Error('A note type needs at least one template')
 
   await db.run(`UPDATE note_types SET ${SET_NOTE_TYPE} WHERE id = ?`,
-    [...noteTypeParams(next), next.id])
+    [...noteTypeParams(next, now), next.id])
 
   const shape = (t: NoteType) => `${JSON.stringify(t.fields)}|${JSON.stringify(t.templates)}`
   if (shape(before) === shape(next)) return 0
@@ -294,7 +324,10 @@ export async function deleteNoteType(noteTypeId: string): Promise<void> {
   if (nt.builtin) throw new Error('Built-in note types cannot be deleted')
   const used = await noteTypeUsage(noteTypeId)
   if (used) throw new Error(`${used} note${used === 1 ? '' : 's'} still use this type`)
-  await db.run('DELETE FROM note_types WHERE id = ?', [noteTypeId])
+  await db.batch([
+    { sql: TOMBSTONE, params: ['note_types', noteTypeId, Date.now()] },
+    { sql: 'DELETE FROM note_types WHERE id = ?', params: [noteTypeId] },
+  ])
 }
 
 /**
@@ -394,10 +427,10 @@ export async function createDeck(name: string, parentId: string | null = null): 
     // are clamped on write by setSchedulingDefaults; COALESCE covers the
     // collection that has never opened settings at all.
     await db.run(
-      `INSERT INTO decks (id, parent_id, name, retention_target, new_per_day) VALUES (?,?,?,
+      `INSERT INTO decks (id, parent_id, name, updated_at, retention_target, new_per_day) VALUES (?,?,?,?,
          COALESCE((SELECT CAST(value AS REAL)    FROM sync_state WHERE key = 'pref.scheduling.retention'),   0.9),
          COALESCE((SELECT CAST(value AS INTEGER) FROM sync_state WHERE key = 'pref.scheduling.new_per_day'), 20))`,
-      [deckId, parentId, clean],
+      [deckId, parentId, clean, Date.now()],
     )
   } catch (e) {
     throw siblingClash(e, clean)
@@ -445,7 +478,7 @@ export async function renameDeck(deckId: string, name: string): Promise<void> {
   const clean = safeDeckName(name)
   if (!clean) throw new Error('A deck needs a name')
   try {
-    await db.run('UPDATE decks SET name = ? WHERE id = ?', [clean, deckId])
+    await db.run('UPDATE decks SET name = ?, updated_at = ? WHERE id = ?', [clean, Date.now(), deckId])
   } catch (e) {
     throw siblingClash(e, clean)
   }
@@ -468,7 +501,7 @@ export async function moveDeck(deckId: string, parentId: string | null): Promise
   }
   const [self] = await db.select<{ name: string }>('SELECT name FROM decks WHERE id = ?', [deckId])
   try {
-    await db.run('UPDATE decks SET parent_id = ? WHERE id = ?', [parentId, deckId])
+    await db.run('UPDATE decks SET parent_id = ?, updated_at = ? WHERE id = ?', [parentId, Date.now(), deckId])
   } catch (e) {
     throw siblingClash(e, self?.name ?? 'that')
   }
@@ -500,8 +533,20 @@ export async function deckContents(deckId: string) {
  * back to their note's deck rather than leaving a reference to a deck that is
  * about to stop existing.
  */
-export const deleteDeck = (deckId: string) =>
+export const deleteDeck = (deckId: string, now = Date.now()) =>
   db.batch([
+    // The subtree's decks, its notes and their card states, all read before
+    // anything is removed — the cascade makes them unreachable afterwards.
+    tombstoneCards(
+      `WITH RECURSIVE sub(id) AS (
+         SELECT ? UNION ALL SELECT d.id FROM decks d JOIN sub ON d.parent_id = sub.id
+       )
+       SELECT 'decks', id, ?, 0 FROM sub
+       UNION ALL SELECT 'notes', n.id, ?, 0 FROM notes n JOIN sub ON n.deck_id = sub.id
+       UNION ALL SELECT 'card_states', c.id, ?, 0 FROM cards c
+              JOIN notes n ON n.id = c.note_id JOIN sub ON n.deck_id = sub.id`,
+      [deckId, now, now, now],
+    ),
     {
       sql: `UPDATE cards SET deck_id = NULL WHERE deck_id IN (
               WITH RECURSIVE sub(id) AS (
@@ -518,9 +563,10 @@ export const deleteDeck = (deckId: string) =>
  * and when, and rewriting that would be a lie.
  */
 export const setDeckOptions = (deckId: string, retention: number, newPerDay: number) =>
-  db.run('UPDATE decks SET retention_target = ?, new_per_day = ? WHERE id = ?', [
+  db.run('UPDATE decks SET retention_target = ?, new_per_day = ?, updated_at = ? WHERE id = ?', [
     retention,
     Math.min(9999, Math.max(0, Math.round(newPerDay) || 0)),
+    Date.now(),
     deckId,
   ])
 
@@ -532,8 +578,11 @@ export const setDeckOptions = (deckId: string, retention: number, newPerDay: num
  * NULL for every card until an import says otherwise, and it has to be spelled
  * the same way in every deck-scoped query or the badges and the study loop stop
  * agreeing (README, rule 4).
+ *
+ * Defined in core rather than here because the search compiler and the filtered
+ * deck builder spell it too, and three copies of one expression is three places
+ * for the badges and the study loop to start disagreeing.
  */
-const DECK_OF = 'COALESCE(c.deck_id, n.deck_id)'
 
 /**
  * Cards introduced today, per deck.
@@ -830,8 +879,14 @@ async function regenerateCards(
   return true
 }
 
-export const deleteNote = (noteId: string) =>
+export const deleteNote = (noteId: string, now = Date.now()) =>
   db.batch([
+    // Tombstones before the DELETEs: they read the rows that are about to go.
+    tombstoneCards(
+      `SELECT 'card_states', id, ?, 0 FROM cards WHERE note_id = ?`,
+      [now, noteId],
+    ),
+    { sql: TOMBSTONE, params: ['notes', noteId, now] },
     { sql: 'DELETE FROM cards WHERE note_id = ?', params: [noteId] },
     { sql: 'DELETE FROM notes WHERE id = ?', params: [noteId] },
   ])
@@ -1018,14 +1073,27 @@ export async function undoLast(): Promise<boolean> {
   return true
 }
 
-export const setFlag = (cardId: string, flag: number) =>
-  db.run(`UPDATE cards SET flag = ? WHERE id = ?`, [flag, cardId])
+/**
+ * The three writes that are a *decision* rather than a derived value.
+ *
+ * `suspended`, `buried_until`, `flag` and `deck_id` are the `card_states`
+ * subset that syncs — everything else in `cards` is FSRS output that
+ * `replayReviews()` rebuilds. Each one stamps `state_updated_at`, which is what
+ * the push loop reads to find them: without the stamp a suspend made here is
+ * invisible to sync and simply never leaves the device.
+ */
+export const setFlag = (cardId: string, flag: number, now = Date.now()) =>
+  db.run(`UPDATE cards SET flag = ?, state_updated_at = ? WHERE id = ?`, [flag, now, cardId])
 
-export const suspend = (cardId: string) =>
-  db.run(`UPDATE cards SET suspended = 1 WHERE id = ?`, [cardId])
+export const suspend = (cardId: string, now = Date.now()) =>
+  db.run(`UPDATE cards SET suspended = 1, state_updated_at = ? WHERE id = ?`, [now, cardId])
 
-export const bury = (cardId: string) =>
-  db.run(`UPDATE cards SET buried_until = ? WHERE id = ?`, [tomorrow(), cardId])
+export const bury = (cardId: string, now = Date.now()) =>
+  db.run(`UPDATE cards SET buried_until = ?, state_updated_at = ? WHERE id = ?`, [
+    tomorrow(),
+    now,
+    cardId,
+  ])
 
 const tomorrow = () => {
   const d = new Date()

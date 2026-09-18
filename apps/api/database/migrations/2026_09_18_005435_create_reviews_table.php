@@ -26,7 +26,13 @@ return new class extends Migration
         Schema::create('reviews', function (Blueprint $table): void {
             // Client-generated, so a retried push is idempotent for free — the
             // append-only rule paying for itself again (PLAN.md §2.6).
-            $table->uuid('id')->primary();
+            //
+            // A string, not a uuid: an answer this device recorded gets a UUID,
+            // but one replayed out of an .apkg is `<note>:<ord>@<ts>` — about 52
+            // characters, and content-derived precisely so a re-import cannot
+            // duplicate it. char(36) would reject every imported review under
+            // strict mode, which is exactly the history Phase 4 exists to carry.
+            $table->string('id', 80)->primary();
             $table->foreignUuid('user_id')->constrained()->cascadeOnDelete();
             $table->string('card_id', 80);
             $table->unsignedBigInteger('client_ts');

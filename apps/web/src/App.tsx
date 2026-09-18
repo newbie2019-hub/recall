@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router'
 import { Toaster } from '@/components/ui/sonner'
 import { AuthProvider } from '@/lib/auth'
+import { useSync } from '@/hooks/useSync'
 import { DeckListPage } from '@/routes/DeckListPage'
 import { DeckPage } from '@/routes/DeckPage'
 import { NotePage } from '@/routes/NotePage'
@@ -38,6 +39,7 @@ import { ModerationPage } from '@/routes/ModerationPage'
 export default function App() {
   return (
     <AuthProvider>
+      <Sync />
       <Routes>
         <Route path="/" element={<DeckListPage />} />
         <Route path="/study" element={<StudyPage />} />
@@ -78,4 +80,16 @@ export default function App() {
       <Toaster />
     </AuthProvider>
   )
+}
+
+/**
+ * The sync loop, mounted once and rendering nothing.
+ *
+ * It lives in its own component rather than in `App` because the hook needs to
+ * be *inside* `AuthProvider` to read the session, and a component cannot use a
+ * context it provides itself.
+ */
+function Sync() {
+  useSync()
+  return null
 }
