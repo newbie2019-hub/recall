@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Concerns\RespondsWithApi;
 use App\Http\Controllers\Controller;
 use App\Services\Ai\ExplainService;
+use App\Services\Ai\GradeService;
 use App\Services\Ai\Ledger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ class AiController extends Controller
     public function __construct(
         private readonly Ledger $ledger,
         private readonly ExplainService $explain,
+        private readonly GradeService $grader,
     ) {}
 
     public function usage(Request $request): JsonResponse
@@ -50,6 +52,32 @@ class AiController extends Controller
             ->save();
 
         return $this->ok($this->ledger->summary($request->user()->fresh()));
+    }
+
+    /**
+     * The card doctor: grade cards that already exist.
+     *
+     * One call per batch, not one per card. The client pages a deck through
+     * this and renders what comes back, which keeps the whole feature
+     * stateless — there is no job, no queue and nothing to poll, because a
+     * batch of twenty is a second or two and the client already knows which
+     * cards it has not sent yet.
+     */
+    public function grade(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'cards' => ['required', 'array', 'min:1', 'max:'.GradeService::BATCH],
+            'cards.*.id' => ['required', 'string', 'max:64'],
+            'cards.*.fields' => ['required', 'array', 'min:1', 'max:8'],
+            'cards.*.fields.*' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $cards = array_map(fn (array $card): array => [
+            'id' => (string) $card['id'],
+            'fields' => array_map(fn ($v): string => (string) $v, $card['fields']),
+        ], $data['cards']);
+
+        return $this->ok(['verdicts' => $this->grader->grade($request->user(), $cards)]);
     }
 
     /**

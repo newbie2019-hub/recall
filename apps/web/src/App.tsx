@@ -27,6 +27,7 @@ import { MyListingsPage } from '@/routes/MyListingsPage'
 import { LegalPage } from '@/routes/LegalPage'
 import { SharePage } from '@/routes/SharePage'
 import { WelcomePage } from '@/routes/WelcomePage'
+import { DoctorPage } from '@/routes/DoctorPage'
 
 /**
  * The route table.
@@ -96,6 +97,7 @@ export default function App() {
 
             {/* Phase 6 — browser, dashboard, focus timer. */}
             <Route path="/browse" element={<BrowsePage />} />
+            <Route path="/doctor" element={<DoctorPage />} />
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/pomodoro" element={<PomodoroPage />} />
 

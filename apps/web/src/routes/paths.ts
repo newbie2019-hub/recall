@@ -46,6 +46,11 @@ export const paths = {
   // without an account, because the person who needs it is usually not a user.
   legal: '/legal',
 
+  // Phase 10b — the grader pointed at cards you already have. `?deck=` scopes
+  // it; without one it sweeps the collection.
+  doctor: '/doctor',
+  doctorFor: (deckId: string) => `/doctor?deck=${deckId}`,
+
   // Phase 9 — one shared deck's people. Not the document: that has no URL,
   // because it is the deck you are already on.
   share: (deckId: string) => `/decks/${deckId}/share`,

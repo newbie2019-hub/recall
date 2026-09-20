@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { Download, Filter, FolderPlus, LayoutGrid, Menu, Plus, Upload } from 'lucide-react'
+import { Download, Filter, FolderPlus, LayoutGrid, Menu, Plus, Stethoscope, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -114,6 +114,9 @@ export function AppShell() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate(paths.noteTypes)}>
                   <LayoutGrid /> Note types
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(paths.doctor)}>
+                  <Stethoscope /> Card doctor
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -144,3 +144,21 @@ export interface AiExplanation {
   explanation: string
   confusable_with: string
 }
+
+/**
+ * What the grader thought of one card.
+ *
+ * The tiers are the Memory Machines benchmark's: 0 is off-target, **1 is the
+ * one that matters** — structurally broken but plausible-looking, the card that
+ * quietly wastes months of review — 2 is usable with a fixable weakness, and 3
+ * is fine.
+ */
+export interface AiVerdict {
+  id: string
+  tier: 0 | 1 | 2 | 3
+  dimension: 'lacks_context' | 'multiple_answers' | 'shallow' | 'wordy' | 'too_narrow' | 'ok'
+  reason: string
+}
+
+/** How many cards one grading call carries. Mirrors `GradeService::BATCH`. */
+export const GRADE_BATCH = 20

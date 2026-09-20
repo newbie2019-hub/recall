@@ -137,6 +137,9 @@ export function DeckListPage() {
                 <DropdownMenuItem onClick={() => navigate(paths.publishDeck(d.id))}>
                   Publish…
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(paths.doctorFor(d.id))}>
+                  Check the cards…
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => setDeckDialog({ kind: 'delete', deck: d })}>
                   Delete

@@ -69,6 +69,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::put('ai/consent', [AiController::class, 'consent'])
         ->middleware('throttle:20,1')
         ->name('ai.consent');
+    // The card doctor. Twenty cards a call, so the throttle is per batch and
+    // a 20k-card sweep is a thousand of them — well inside the quota, which is
+    // the real limit.
+    Route::post('ai/grade', [AiController::class, 'grade'])
+        ->middleware('throttle:120,60')
+        ->name('ai.grade');
     Route::post('ai/explain', [AiController::class, 'explain'])
         ->middleware('throttle:30,60')
         ->name('ai.explain');

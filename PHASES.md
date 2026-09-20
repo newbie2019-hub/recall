@@ -9,8 +9,7 @@ assume one developer.
 
 **Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
 · 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) ·
-**10a ✅ — the AI meter and the lapse explainer** · **next: 10b, the card
-doctor** · 11 (the debt that is already costing something, harvested from the
+**10a ✅ — the AI meter and the lapse explainer** · **10b ✅ — the card doctor** · **next: 10c, source → candidate cards** · 11 (the debt that is already costing something, harvested from the
 tree rather than remembered) · 12 (sim cards) planned · 13 (mobile) deferred
 indefinitely at the product's request.
 
@@ -620,7 +619,15 @@ that decide who may write at all.*
 - ✅ **Consent is off by default** (`users.ai_consent_at`) and nothing is sent
   until it is on. Settings → AI shows the running spend, split by feature,
   counted from the same rows an invoice would be.
-- ◻︎ 10b (card doctor) · ◻︎ 10c (source → candidates) · ◻︎ 10d (briefing).
+- ✅ **10b — the card doctor.** The grader from AI.md §2.2, pointed at cards
+  that already exist: the imported Anki deck, the cloned listing, the ones
+  written at 2am. Twenty cards a call, because the rubric costs more tokens than
+  the cards do. Verdicts cache locally against a fingerprint of the exact text
+  that was graded, so an edited note falls out by itself rather than showing a
+  criticism of a sentence already rewritten. The sweep never starts unasked,
+  says what it will cost in batches first, and keeps everything done so far when
+  stopped.
+- ◻︎ 10c (source → candidates) · ◻︎ 10d (briefing).
 - ⚠️ **10d has a prerequisite in Phase 11.** The briefing writes prose over the
   numbers `queries/stats.ts` computes, and two of those charts are an hour wrong
   across a DST boundary. A model asserting a wrong number in a sentence is worse

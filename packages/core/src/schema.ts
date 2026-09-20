@@ -265,6 +265,30 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_app_sessions_started ON app_sessions(started_at);
   `,
+
+  // 9 - the card doctor's verdicts (Phase 10b)
+  `
+  -- What the grader thought of a note, the last time it looked.
+  --
+  -- Cached locally rather than recomputed, because grading costs real money:
+  -- re-sweeping a 20,000-card import to redraw a list would be a bill, not a
+  -- refresh. \`fingerprint\` is what makes it safe to keep — it is a hash of the
+  -- fields that were graded, so an edited note falls out of the cache by
+  -- itself and is re-graded rather than showing a verdict about text nobody
+  -- can see any more.
+  --
+  -- Local only and not synced: it is an opinion about the cards, cheap to
+  -- rebuild, and pushing it would put one device's spend decisions on another.
+  CREATE TABLE note_grades (
+    note_id     TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+    tier        INTEGER NOT NULL,     -- 0 broken · 1 structurally weak · 2 fixable · 3 fine
+    dimension   TEXT NOT NULL,
+    reason      TEXT NOT NULL DEFAULT '',
+    fingerprint TEXT NOT NULL,
+    graded_at   INTEGER NOT NULL
+  );
+  CREATE INDEX idx_note_grades_tier ON note_grades(tier);
+  `,
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

@@ -1,6 +1,6 @@
 import type {
   ApiEnvelope, ApiErrorBody, ApiErrorCode, DeviceIdentity, DeviceSummary,
-  AiExplanation, AiUsage,
+  AiExplanation, AiUsage, AiVerdict,
   Session, SyncPayload, SyncPullResult, SyncPushResult,
 } from './types.ts'
 import type { OnboardingAnswers } from '../onboarding.ts'
@@ -223,6 +223,16 @@ export class ApiClient {
     lapses?: number
   }): Promise<AiExplanation> {
     return this.request<AiExplanation>('ai/explain', { method: 'POST', body: input })
+  }
+
+  /**
+   * Grade a batch of cards that already exist.
+   *
+   * Twenty at a time, because the rubric costs more tokens than the cards do
+   * and sending it once per card would be paying for it twenty times.
+   */
+  aiGrade(cards: { id: string; fields: Record<string, string> }[]): Promise<{ verdicts: AiVerdict[] }> {
+    return this.request<{ verdicts: AiVerdict[] }>('ai/grade', { method: 'POST', body: { cards } })
   }
 
   /**
