@@ -49,6 +49,8 @@ export const paths = {
   // Phase 10b — the grader pointed at cards you already have. `?deck=` scopes
   // it; without one it sweeps the collection.
   doctor: '/doctor',
+  /** Phase 10c — a document in, cards you chose to keep out. */
+  generate: '/generate',
   doctorFor: (deckId: string) => `/doctor?deck=${deckId}`,
 
   // Phase 9 — one shared deck's people. Not the document: that has no URL,

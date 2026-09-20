@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Concerns\RespondsWithApi;
 use App\Http\Controllers\Controller;
+use App\Services\Ai\BriefService;
 use App\Services\Ai\ExplainService;
 use App\Services\Ai\GradeService;
 use App\Services\Ai\Ledger;
@@ -29,6 +30,7 @@ class AiController extends Controller
         private readonly Ledger $ledger,
         private readonly ExplainService $explain,
         private readonly GradeService $grader,
+        private readonly BriefService $briefer,
     ) {}
 
     public function usage(Request $request): JsonResponse
@@ -52,6 +54,22 @@ class AiController extends Controller
             ->save();
 
         return $this->ok($this->ledger->summary($request->user()->fresh()));
+    }
+
+    /**
+     * Two paragraphs over the dashboard's own numbers.
+     *
+     * The figures are computed on the device and sent here; the model is never
+     * asked to do arithmetic. A screen whose value is that its numbers are
+     * trustworthy cannot have a model inventing one.
+     */
+    public function brief(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'figures' => ['required', 'array'],
+        ]);
+
+        return $this->ok($this->briefer->brief($request->user(), $data['figures']));
     }
 
     /**

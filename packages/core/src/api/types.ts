@@ -162,3 +162,42 @@ export interface AiVerdict {
 
 /** How many cards one grading call carries. Mirrors `GradeService::BATCH`. */
 export const GRADE_BATCH = 20
+
+/** A generation run. Shaped like an import job, because it is the same wait. */
+export interface AiJob {
+  id: string
+  source_name: string
+  status: 'queued' | 'running' | 'done' | 'failed' | 'partial'
+  stage: string
+  done: number
+  total: number
+  estimated_micros: number
+  error: string | null
+  candidates: number
+}
+
+/**
+ * A suggested card, already past the grader.
+ *
+ * Tiers 0 and 1 never reach the client: they were dropped before this table was
+ * written. What arrives is tier 2 (usable, with a named weakness) and tier 3
+ * (fine) — and the weakness is shown, because a reviewer deciding in two
+ * seconds deserves to know which ones to look at hardest.
+ */
+export interface AiCandidate {
+  id: string
+  note_type: string
+  fields: Record<string, string>
+  tags: string[]
+  tier: 2 | 3
+  dimension: string
+  reason: string
+  source_excerpt: string | null
+}
+
+/** Two paragraphs over figures the model was given, never ones it computed. */
+export interface AiBriefing {
+  headline: string
+  assessment: string
+  advice: string
+}

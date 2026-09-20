@@ -25,6 +25,7 @@ import {
   AnswerTimeHistogram, Composition, Forecast, Heatmap, RankedBars, RetentionMeter,
   Tile, TimeHeatmap, TimeOfDay, duration,
 } from '@/components/stats/charts'
+import { Briefing } from '@/components/stats/Briefing'
 import { Leeches, WorstTopics } from '@/components/stats/Weaknesses'
 import { collectionReady } from '@/db/boot'
 import * as stats from '@/db/queries/stats'
@@ -302,6 +303,33 @@ function Dashboard({
         </p>
         <Leeches rows={data.leeches} onApply={onApplyLeech} />
       </section>
+      )}
+
+      {/* The figures it is given are exactly the ones drawn above. It is
+          forbidden from computing any of its own — see `Briefing`. */}
+      {view === 'progress' && (
+        <Briefing
+          figures={{
+            true_retention: Number((passed / tested).toFixed(3)),
+            target_retention: Number(target.toFixed(3)),
+            recall_tests: tested,
+            mature_retention: matureTested ? Number((maturePassed / matureTested).toFixed(3)) : null,
+            streak_days: streak,
+            due_next_7_days: weekLoad,
+            overdue_cards: data.load.overdue,
+            burden_reviews_per_day: Number(data.load.burden.toFixed(2)),
+            worst_topics: data.topics.slice(0, 5).map((t) => ({
+              tag: t.tag,
+              lapse_rate: t.tested ? Number((t.failed / t.tested).toFixed(3)) : 0,
+              tested: t.tested,
+            })),
+            retention_by_deck: data.retention.slice(0, 8).map((d) => ({
+              deck: d.deck, retention: Number((d.passed / d.tested).toFixed(3)),
+              target: d.target, tested: d.tested,
+            })),
+            leeches: data.leeches.length,
+          }}
+        />
       )}
 
       {view === 'progress' && <Forecast days={data.forecast} />}

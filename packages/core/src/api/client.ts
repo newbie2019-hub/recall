@@ -1,6 +1,6 @@
 import type {
   ApiEnvelope, ApiErrorBody, ApiErrorCode, DeviceIdentity, DeviceSummary,
-  AiExplanation, AiUsage, AiVerdict,
+  AiBriefing, AiCandidate, AiExplanation, AiJob, AiUsage, AiVerdict,
   Session, SyncPayload, SyncPullResult, SyncPushResult,
 } from './types.ts'
 import type { OnboardingAnswers } from '../onboarding.ts'
@@ -233,6 +233,81 @@ export class ApiClient {
    */
   aiGrade(cards: { id: string; fields: Record<string, string> }[]): Promise<{ verdicts: AiVerdict[] }> {
     return this.request<{ verdicts: AiVerdict[] }>('ai/grade', { method: 'POST', body: { cards } })
+  }
+
+  /**
+   * What the dashboard's numbers mean together.
+   *
+   * The figures are computed here and sent; the model is never asked to do
+   * arithmetic on a screen whose whole value is that its numbers are true.
+   */
+  aiBrief(figures: Record<string, unknown>): Promise<AiBriefing> {
+    return this.request<AiBriefing>('ai/brief', { method: 'POST', body: { figures } })
+  }
+
+  // ── the generation pipeline (10c) ───────────────────────────────────────
+
+  /**
+   * Hand over a document and start a run.
+   *
+   * The reply carries the estimate, because a subsystem that spends first and
+   * reports after is one nobody should trust with a budget.
+   */
+  async aiCreateJob(file: File): Promise<AiJob> {
+    const form = new FormData()
+    form.append('file', file)
+
+    // FormData sets its own multipart boundary, so the content type must not
+    // be set here — a hand-written one loses the boundary and the upload
+    // arrives empty.
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    const token = await this.options.tokens.get()
+    if (token) headers.Authorization = `Bearer ${token}`
+
+    const response = await this.http(`${this.options.baseUrl.replace(/\/$/, '')}/ai/jobs`, {
+      method: 'POST',
+      headers,
+      body: form,
+    })
+
+    const payload = (await response.json().catch(() => null)) as
+      | { data?: AiJob; error?: { code: ApiErrorCode; message: string } }
+      | null
+
+    if (!response.ok) {
+      throw new ApiError(
+        payload?.error?.code ?? this.codeForStatus(response.status),
+        payload?.error?.message ?? `Upload failed (${response.status})`,
+        response.status,
+      )
+    }
+
+    return payload!.data as AiJob
+  }
+
+  /** Poll. Unthrottled server-side, for the reason import polling is. */
+  aiJob(id: string): Promise<AiJob> {
+    return this.request<AiJob>(`ai/jobs/${id}`, { idempotent: true })
+  }
+
+  aiCandidates(id: string): Promise<{ candidates: AiCandidate[] }> {
+    return this.request<{ candidates: AiCandidate[] }>(`ai/jobs/${id}/candidates`, { idempotent: true })
+  }
+
+  /**
+   * Keep these, reject the rest.
+   *
+   * Returns note *data*, not notes: the collection lives on the device, so the
+   * client writes them through the same path the editor uses. That is what
+   * keeps a generated card from being a second kind of note with its own GUID
+   * rules and its own bugs.
+   */
+  aiAccept(id: string, ids: string[]): Promise<{ notes: { note_type: string; fields: Record<string, string>; tags: string[] }[] }> {
+    return this.request(`ai/jobs/${id}/accept`, { method: 'POST', body: { ids } })
+  }
+
+  aiDeleteJob(id: string): Promise<{ deleted: boolean }> {
+    return this.request<{ deleted: boolean }>(`ai/jobs/${id}`, { method: 'DELETE' })
   }
 
   /**

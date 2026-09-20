@@ -83,10 +83,11 @@ route. A deck of anatomy plates now clones with its plates. The manifest is
 also the authorization list — a published version serves exactly the files it
 names, so publishing one deck is not a read of the publisher's library.
 
-**Phase 10a has landed**: the AI meter and
-one feature to prove it — a lapse explainer on the answer side, off by default,
-with the running spend in Settings. The meter shipped *before* the features
-deliberately, so nothing after it is untracked. Next is 10b, the card doctor.
-Designed in [AI.md](AI.md). See [PHASES.md](PHASES.md),
+**Phase 10 has landed**, designed in [AI.md](AI.md): the AI meter first and the
+features after it, so nothing is untracked. A lapse explainer, a **card doctor**
+that audits cards you already have, a generation pipeline whose grading pass
+throws away what will not survive review, and a weakness briefing over the
+dashboard's own figures. All of it off by default. Next: Phase 11, interactive
+sim cards. See [PHASES.md](PHASES.md),
 [PLAN.md](PLAN.md) and [CRITIQUE.md](CRITIQUE.md), which scores the build rather
 than the plan.

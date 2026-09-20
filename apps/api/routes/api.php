@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\AiController;
+use App\Http\Controllers\Api\V1\AiJobController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CollaborationController;
 use App\Http\Controllers\Api\V1\DeviceController;
@@ -72,9 +73,27 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // The card doctor. Twenty cards a call, so the throttle is per batch and
     // a 20k-card sweep is a thousand of them — well inside the quota, which is
     // the real limit.
+    // 10c — the pipeline. Uploads are throttled hard because each one is a
+    // document to read; polling is not throttled at all, for the reason
+    // `imports.show` is not: polling is the client's normal state and a rate
+    // limit on it looks like a failure.
+    Route::post('ai/jobs', [AiJobController::class, 'store'])
+        ->middleware('throttle:10,60')
+        ->name('ai.jobs.store');
+    Route::get('ai/jobs/{job}', [AiJobController::class, 'show'])->name('ai.jobs.show');
+    Route::get('ai/jobs/{job}/candidates', [AiJobController::class, 'candidates'])
+        ->name('ai.jobs.candidates');
+    Route::post('ai/jobs/{job}/accept', [AiJobController::class, 'accept'])
+        ->middleware('throttle:60,1')
+        ->name('ai.jobs.accept');
+    Route::delete('ai/jobs/{job}', [AiJobController::class, 'destroy'])->name('ai.jobs.destroy');
+
     Route::post('ai/grade', [AiController::class, 'grade'])
         ->middleware('throttle:120,60')
         ->name('ai.grade');
+    Route::post('ai/brief', [AiController::class, 'brief'])
+        ->middleware('throttle:20,60')
+        ->name('ai.brief');
     Route::post('ai/explain', [AiController::class, 'explain'])
         ->middleware('throttle:30,60')
         ->name('ai.explain');

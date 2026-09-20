@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { Download, Filter, FolderPlus, LayoutGrid, Menu, Plus, Stethoscope, Upload } from 'lucide-react'
+import { Download, Filter, FolderPlus, LayoutGrid, Menu, Plus, Sparkles, Stethoscope, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -100,6 +100,9 @@ export function AppShell() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate(paths.newFilteredDeck)}>
                   <Filter /> Custom study
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(paths.generate)}>
+                  <Sparkles /> Cards from a document
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {/* The picker is opened from a menu item that is closing. The

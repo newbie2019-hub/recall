@@ -134,6 +134,19 @@ export async function ensureNoteTypes() {
   }
 }
 
+/**
+ * A note type by name, for callers that have a name and no id.
+ *
+ * The generation pipeline is one: the collection lives on the device, so the
+ * server names the type it suggests rather than keying it — exactly as the
+ * `.apkg` importer matches on name plus field signature.
+ */
+export async function noteTypeByName(name: string): Promise<NoteType | null> {
+  const all = await noteTypes()
+  const wanted = name.trim().toLowerCase()
+  return all.find((t) => t.name.trim().toLowerCase() === wanted) ?? all[0] ?? null
+}
+
 export async function noteTypes(): Promise<NoteType[]> {
   const rows = await db.select<NoteTypeRow>('SELECT * FROM note_types ORDER BY builtin DESC, name')
   return rows.map(toNoteType)

@@ -9,7 +9,7 @@ assume one developer.
 
 **Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
 · 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) ·
-**10a ✅ — the AI meter and the lapse explainer** · **10b ✅ — the card doctor** · **next: 10c, source → candidate cards** · 11 (the debt that is already costing something, harvested from the
+**10a ✅ — the AI meter and the lapse explainer** · **Phase 10 ✅ (AI.md)** · **next: Phase 11, interactive sim cards** · 11 (the debt that is already costing something, harvested from the
 tree rather than remembered) · 12 (sim cards) planned · 13 (mobile) deferred
 indefinitely at the product's request.
 
@@ -594,7 +594,7 @@ that decide who may write at all.*
 
 ---
 
-## Phase 10 — AI card generation & summaries · ~3 weeks · 10a ✅
+## Phase 10 — AI card generation & summaries · ~3 weeks · ✅
 
 > **Rescoped in [AI.md](AI.md).** Three changes the research forced: the meter
 > ships *first*, with the cheapest feature, so nothing after it is untracked; a
@@ -627,7 +627,21 @@ that decide who may write at all.*
   criticism of a sentence already rewritten. The sweep never starts unasked,
   says what it will cost in batches first, and keeps everything done so far when
   stopped.
-- ◻︎ 10c (source → candidates) · ◻︎ 10d (briefing).
+- ✅ **10c — source → candidate cards.** Upload → extract → chunk → generate →
+  **grade** → default-reject approval. The grading pass is the design: it costs
+  ~4% of the bill and removes the 36% of cards the benchmark calls unusable,
+  and T0/T1 are dropped before the approval screen is drawn. Candidates arrive
+  **unselected** and there is no "select all", because a wall of pre-ticked
+  suggestions *is* the rubber stamp. Accepting returns note *data* and the
+  client writes it through the ordinary note path — real GUIDs, normal card
+  generation, sync and Anki export unchanged. Chunking breaks on paragraphs and
+  sentences with overlap, because a chunk cut mid-clause is where fragment
+  cards come from. PDF text-layer extraction via `smalot/pdfparser` (dependency
+  approved); a scan is refused with the reason rather than yielding nothing.
+- ✅ **10d — the weakness briefing.** One component, not PHASES' registry of
+  five, which CRITIQUE had already scored 8.5 as "a solution looking for a
+  problem". The model is handed the figures the dashboard computed and is
+  forbidden from producing any of its own.
 - ⚠️ **10d has a prerequisite in Phase 11.** The briefing writes prose over the
   numbers `queries/stats.ts` computes, and two of those charts are an hour wrong
   across a DST boundary. A model asserting a wrong number in a sentence is worse
