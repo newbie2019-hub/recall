@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth'
 import {
   formatBytes, getVersion, recordInstall, updateAvailable, type Listing,
 } from '@/lib/marketplace'
+import { pullVersionMedia } from '@/lib/mediaTransfer'
 import { paths } from '@/routes/paths'
 
 /**
@@ -36,9 +37,9 @@ import { paths } from '@/routes/paths'
  */
 export function CloneButton({ listing }: { listing: Listing }) {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, client } = useAuth()
   const [clone, setClone] = useState<ClonedDeck | null | undefined>(undefined)
-  const [stage, setStage] = useState<'downloading' | 'importing' | null>(null)
+  const [stage, setStage] = useState<'downloading' | 'importing' | 'media' | null>(null)
   const [progress, setProgress] = useState(0)
 
   const refresh = useCallback(async () => {
@@ -62,6 +63,19 @@ export function CloneButton({ listing }: { listing: Listing }) {
         version.payload,
         (done, total) => setProgress(total ? Math.round((done / total) * 100) : 100),
       )
+
+      // The plates, from the published version rather than from the
+      // publisher's account — the version's manifest is what made them public.
+      // After the notes, because a deck that arrives without its images is
+      // recoverable on the next sync and one that fails mid-import is not.
+      const images = version.payload.media ?? []
+      if (images.length) {
+        setStage('media')
+        setProgress(0)
+        await pullVersionMedia(client, listing.id, listing.latest_version, images, (p) =>
+          setProgress(p.total ? Math.round((p.done / p.total) * 100) : 100),
+        )
+      }
 
       // Bookkeeping, and never a reason to fail a clone that has already
       // landed: the deck is in the collection whether or not the server hears
@@ -121,10 +135,12 @@ export function CloneButton({ listing }: { listing: Listing }) {
             <DialogDescription>
               {stage === 'downloading'
                 ? `Downloading${latest ? ` ${formatBytes(latest.size_bytes)}` : ''}…`
-                : 'Writing notes into your collection…'}
+                : stage === 'media'
+                  ? 'Fetching the images…'
+                  : 'Writing notes into your collection…'}
             </DialogDescription>
           </DialogHeader>
-          <Progress value={stage === 'importing' ? progress : 0} />
+          <Progress value={stage === 'downloading' ? 0 : progress} />
           <p className="text-xs text-muted-foreground">
             A large deck takes a while. Notes are written in batches that each
             stand on their own, so nothing is left half-imported.

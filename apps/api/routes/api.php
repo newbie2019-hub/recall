@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\DeviceController;
 use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\ImportController;
 use App\Http\Controllers\Api\V1\ListingController;
+use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\ModerationController;
 use App\Http\Controllers\Api\V1\OnboardingController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
@@ -81,6 +82,18 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('account', [AccountController::class, 'destroy'])
         ->middleware('throttle:5,1')
         ->name('account.destroy');
+
+    // Phase 8's unpaid item: the metadata has synced since Phase 5 and the
+    // bytes never moved. The body is raw bytes, so the upload throttle is
+    // generous — one deck of plates is a few hundred small files.
+    Route::put('media/{sha256}', [MediaController::class, 'store'])
+        ->where('sha256', '[a-fA-F0-9]{64}')
+        ->middleware('throttle:600,1')
+        ->name('media.store');
+    Route::post('media/held', [MediaController::class, 'held'])->name('media.held');
+    Route::get('media/{sha256}', [MediaController::class, 'show'])
+        ->where('sha256', '[a-fA-F0-9]{64}')
+        ->name('media.show');
 
     Route::get('devices', [DeviceController::class, 'index'])->name('devices.index');
     Route::delete('devices/{device}', [DeviceController::class, 'destroy'])->name('devices.destroy');
@@ -216,6 +229,12 @@ Route::middleware('throttle:60,1')->group(function (): void {
 
     Route::get('marketplace/listings/{listing}', [ListingController::class, 'show'])
         ->name('marketplace.listings.show');
+
+    // A published version's bytes, to anyone who may read that version. The
+    // version's own manifest is the authorization list.
+    Route::get('marketplace/listings/{listing}/versions/{version}/media/{sha256}', [MediaController::class, 'version'])
+        ->where('sha256', '[a-fA-F0-9]{64}')
+        ->name('marketplace.version.media');
 
     Route::get('marketplace/listings/{listing}/versions/{version}', [ListingController::class, 'version'])
         ->whereNumber('version')

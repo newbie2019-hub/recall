@@ -76,11 +76,14 @@ studying with the banner showing `sync paused`. Only signing out puts the wall
 back. `/explore`, a listing and `/legal` stay open to anyone — a shared deck is
 handed to people who do not have an account yet.
 
-Next: **the media transport** — `POST`/`GET /media/{sha256}` for an account's
-own bytes, plus a per-version manifest so a published or shared deck carries its
-images. It is the oldest unpaid item in the plan and it is what stands between
-this and the medical vertical it is aimed at: today a deck of plates publishes,
-clones and co-edits perfectly and arrives blank. **Phase 10a has landed**: the AI meter and
+**The media transport has landed**, four phases after the metadata started
+syncing without it: `PUT`/`GET /media/{sha256}` for an account's own bytes, and
+a sha256 manifest inside each published version served by a version-scoped
+route. A deck of anatomy plates now clones with its plates. The manifest is
+also the authorization list — a published version serves exactly the files it
+names, so publishing one deck is not a read of the publisher's library.
+
+**Phase 10a has landed**: the AI meter and
 one feature to prove it — a lapse explainer on the answer side, off by default,
 with the running spend in Settings. The meter shipped *before* the features
 deliberately, so nothing after it is untracked. Next is 10b, the card doctor.

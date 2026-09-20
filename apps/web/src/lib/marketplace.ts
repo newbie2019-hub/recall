@@ -125,6 +125,15 @@ export interface VersionPayload {
   decks: PayloadDeck[]
   note_types: PayloadNoteType[]
   notes: PayloadNote[]
+  /**
+   * Every image and sound the published cards refer to.
+   *
+   * Also the authorization list: the server serves a hash from this version
+   * only if this manifest names it, which is what keeps publishing one deck
+   * from becoming a read of the publisher's whole library. Absent on versions
+   * published before the media transport existed.
+   */
+  media?: { sha256: string; mime: string; size: number }[]
 }
 
 export type VersionDownload = ListingVersion & { payload: VersionPayload }

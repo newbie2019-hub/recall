@@ -10,11 +10,12 @@ assume one developer.
 **Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
 · 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) ·
 **10a ✅ — the AI meter and the lapse explainer** · **next: 10b, the card
-doctor** · 11 planned · 12 (mobile) deferred indefinitely at the product's
-request.
+doctor** · 11 (the debt that is already costing something, harvested from the
+tree rather than remembered) · 12 (sim cards) planned · 13 (mobile) deferred
+indefinitely at the product's request.
 
-**Unpaid, oldest first:** the media transport at the end of Phase 8 — published
-and shared decks still arrive without their images.
+**Unpaid, oldest first:** server-side FSRS (Phase 5). The media transport is
+paid — see §8.
 
 Inside a phase, ✅ is landed and tested, ◻︎ is not started, ⚠️ is partly there and
 says what is missing.
@@ -620,6 +621,10 @@ that decide who may write at all.*
   until it is on. Settings → AI shows the running spend, split by feature,
   counted from the same rows an invoice would be.
 - ◻︎ 10b (card doctor) · ◻︎ 10c (source → candidates) · ◻︎ 10d (briefing).
+- ⚠️ **10d has a prerequisite in Phase 11.** The briefing writes prose over the
+  numbers `queries/stats.ts` computes, and two of those charts are an hour wrong
+  across a DST boundary. A model asserting a wrong number in a sentence is worse
+  than a wrong number in a chart, because nobody re-checks a sentence.
 
 - Upload PDF / image / text → queued job → extract (PDF text layer, OCR
   fallback) → chunk → candidate cards.
@@ -636,7 +641,71 @@ that decide who may write at all.*
 
 ---
 
-## Phase 11 — Interactive sim cards · ~1 week
+## Phase 11 — The debt that is already costing something · ~1 week
+
+Harvested from the 46 `ponytail:` markers in the tree, not from memory. **Only
+the items that are wrong or expensive *today* are a phase**; the ones that are
+correct until a threshold are in the table below, with the threshold that
+promotes them, and the deliberate trades stay deliberate.
+
+- ◻︎ **`changeNoteType` leaves the review log behind.** A remapped card carries
+  its scheduling state to the new ordinal, but its rows in the append-only log
+  stay under the old card id — delete and regenerate that card and it replays the
+  *older* ordinal's history. The comment at `db/repo.ts` defers this until "sync
+  can reconcile an id change (Phase 5)". Phase 5 shipped. This is the only item
+  here that can corrupt scheduling, and it is a violation of README rule 1 rather
+  than a slow query.
+- ◻︎ **Two stats charts are an hour wrong across DST.** `daily()` buckets by
+  integer division from local midnight; `byHour()` applies *today's* UTC offset to
+  every historical timestamp. Both comments say "fine unless it drives
+  scheduling" — and 10d is about to read them. Bucket in JS from the raw
+  timestamps; SQLite's `localtime` reads the host TZ, which in a wasm worker is
+  not reliably the user's.
+- ◻︎ **Marketplace search is `LIKE '%term%'` over three columns**, unindexed, and
+  scans the table. `FULLTEXT` on (title, description, tags) is a migration plus a
+  `whereFullText()`, not a search engine. Carry the warning already at the call
+  site: **the suite runs on SQLite, which has no `FULLTEXT`** — decide whether the
+  browse test gets a MySQL connection or a documented skip *before* writing the
+  migration, not after it goes red.
+- ◻︎ **The moderation queue is offset-paged and unassigned.** Fine at zero decks,
+  wrong the first week two moderators work it at once: they collide on the same
+  report, and a new report shifts the page under whoever is reading. A
+  `claimed_by` / `claimed_at` pair and keyset paging.
+- ◻︎ **Server-side FSRS** — the line left open since Phase 5, and the reason the
+  status header still carries a parenthesis. Dashboards and parameter
+  optimisation both need the server to mirror what the client computes.
+
+**Done when:** a note type change survives its card being regenerated; the
+hour-of-day chart says the same thing in March as in June; and two moderators can
+work the queue without stepping on each other.
+
+### Debt tracked with a trigger, not scheduled
+
+Real, named, and deliberately not built. Each row is a `ponytail:` comment that
+already exists at the call site, plus the number that turns it into work.
+
+| Debt | Where | Promote when |
+|---|---|---|
+| Sync pull has no cursor pagination or queue batching | `SyncService` | ~10k users (CRITIQUE §2) |
+| Row-level last-write-wins drops a concurrent edit to a *different* field | `SyncService::push` | Someone reports losing an edit. The answer is §0's Yjs path, not a `field_updated_at` map |
+| Browse paging is `OFFSET`, which scans what it skips | `queries/browse.ts` | Page 200 of a 40k-card search |
+| Marketplace `cursor` is an offset, so a mid-scroll publish shifts the page | `ListingController` | A catalogue past a few hundred listings |
+| Listing preview decodes the whole version payload for five notes | `ListingController` | Versions past a few MB |
+| Media lookup is an O(notes × media) `instr` scan over JSON fields | `queries/settings.ts` | A 50k-note collection waits on Settings |
+| Whole collection read into memory to export | `db/repo.ts`, `core/zip.ts` | A 2 GB deck is also a 2 GB `Uint8Array` |
+| A deck nobody opens is never compacted | `CompactDocuments` | The command already names them — act when its list stops being empty |
+| One-boolean moderator flag | `users.is_moderator` | A third moderation role exists |
+| Per-deck offline opt-in records the choice and evicts nothing | `queries/settings.ts` | Closed by the media transport, or it is a switch that frees no bytes |
+
+Deliberate and staying that way, each with its reason at the call site: FSRS fuzz
+disabled (replay must be exact), KaTeX with no MathJax fallback (a CDN fallback
+contradicts offline-first), rectangles and ellipses only in the occlusion editor,
+`contentEditable` + `execCommand` in the note editor, 25/5 pomodoro constants,
+chart marks not keyboard-focusable.
+
+---
+
+## Phase 12 — Interactive sim cards · ~1 week
 
 Independent of 3D, and the best learning-value-per-line in the plan. Plain TS in
 `packages/core`, so React Native inherits it. See `SIMULATION.md`.
@@ -651,7 +720,7 @@ that draws the real curve on reveal.
 
 ---
 
-## Phase 12 — React Native mobile · ~3 weeks
+## Phase 13 — React Native mobile · ~3 weeks
 
 - Expo + `packages/core` unchanged. **op-sqlite** locally — *the same SQL and the
   same migrations as web*, which is the payoff for Phase 0.
@@ -693,7 +762,7 @@ Deferred by decision. When you pick it up:
 - Real PhysioNet ECG strips (ODC-BY) for rhythm-recognition decks.
 
 **The cost of deferring:** this is the clearest differentiator and the reason a
-medical student would switch. Phases 0–11 ship a very good general flashcard app
+medical student would switch. Phases 0–12 ship a very good general flashcard app
 into a crowded field. Pull it forward the moment a medical cohort shows interest.
 
 ---
@@ -705,15 +774,17 @@ into a crowded field. Pull it forward the moment a medical cohort shows interest
 | Storage, study loop, card engine | 0–2 | 6 | ✅ done |
 | Decks, authoring, Anki engine | 3 | 2 | ✅ done |
 | Import & export | 4 | 2 | ✅ done |
-| Accounts, auth pages, sync, server-side import | 5 | 3.5 | ← in progress |
-| Dashboard + card browser | 6 | 1.5 | |
-| Filtered decks | 7 | 1 | |
-| Marketplace | 8 | 3 | |
-| Collaboration | 9 | 2 | |
-| AI | 10 | 2.5 | |
-| Sim cards | 11 | 1 | |
-| **Web launch-ready** | **0–11** | **~24.5** | ~14.5 remaining |
-| Mobile | 12 | 3 | |
+| Accounts, auth pages, sync, server-side import | 5 | 3.5 | ✅ done |
+| Dashboard + card browser | 6 | 1.5 | ✅ done |
+| Filtered decks | 7 | 1 | ✅ done |
+| Marketplace | 8 | 3 | ✅ done |
+| Collaboration | 9 | 2 | ✅ done |
+| Media transport | 8's tail | 1.5 | ← in progress |
+| AI | 10 | 3 | 10a ✅ |
+| Debt already costing | 11 | 1 | |
+| Sim cards | 12 | 1 | |
+| **Web launch-ready** | **0–12** | **~27.5** | ~6 remaining |
+| Mobile | 13 | 3 | deferred indefinitely |
 
 The old table said ~19 weeks to launch. It did not carry deck creation, the
 authoring loop, note GUIDs, note-type management, the router, the auth pages,
@@ -724,5 +795,7 @@ required by something already planned or are the reason someone opens the app.
 **Ordering rationale:** 2 before 3 (the engine is what authoring edits) · 3
 before 4 (import depends on guids, deck override, note-type management and the
 `::` mapping) · 5 before 8 and 9 (both need accounts) · 6 and 7 are deliberate
-cheap wins between two hard phases · 10 and 11 are independent of each other and
-of 3D, swap freely.
+cheap wins between two hard phases · **the media transport before anything left**,
+because a published deck arriving blank is the one gap no later phase makes
+smaller · **11 before 10d**, because the briefing reads two charts that are an
+hour wrong · 11 and 12 are independent of each other and of 3D, swap freely.

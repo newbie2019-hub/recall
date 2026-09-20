@@ -84,6 +84,13 @@ interface RequestOptions {
   /** Safe to send again if the reply never arrives. */
   idempotent?: boolean
   auth?: boolean
+  /**
+   * Send the body as-is with this content type, rather than as JSON.
+   *
+   * Only media uses it. A picture base64'd into a JSON field is a third larger
+   * for no reason, and the file's name is already in the URL.
+   */
+  raw?: string
 }
 
 export class ApiClient {
@@ -261,6 +268,78 @@ export class ApiClient {
     return this.request<{ revoked: boolean }>(`devices/${deviceId}`, { method: 'DELETE' })
   }
 
+  // ── media (Phase 8's unpaid item) ───────────────────────────────────────
+
+  /**
+   * Which of these the server already has.
+   *
+   * Asked before uploading, so a reinstalled device does not push a library it
+   * has already pushed. The client offers what it holds and lets the server
+   * decide what is new, which is far simpler than tracking upload state per
+   * device — and correct after a restore, which per-device state is not.
+   */
+  async heldMedia(sha256: string[]): Promise<Set<string>> {
+    if (!sha256.length) return new Set()
+    const { held } = await this.request<{ held: string[] }>('media/held', {
+      method: 'POST',
+      body: { sha256 },
+      idempotent: true,
+    })
+    return new Set(held)
+  }
+
+  /**
+   * Upload one file, named by the digest of its own bytes.
+   *
+   * Idempotent by construction: the name *is* the content, so sending the same
+   * file twice cannot mean two different things.
+   */
+  putMedia(sha256: string, bytes: Uint8Array, mime: string): Promise<{ sha256: string; size: number }> {
+    return this.request<{ sha256: string; size: number }>(`media/${sha256}`, {
+      method: 'PUT',
+      body: bytes,
+      raw: mime || 'application/octet-stream',
+      idempotent: true,
+    })
+  }
+
+  /** This account's own bytes. */
+  getMedia(sha256: string): Promise<Blob> {
+    return this.bytes(`media/${sha256}`)
+  }
+
+  /**
+   * A published version's bytes.
+   *
+   * Public, like the version itself: a listing is shared with people who do not
+   * have an account yet, and a deck whose images need a login is a deck that
+   * arrives broken for exactly the audience it was published for.
+   */
+  getVersionMedia(listingId: string, version: number, sha256: string): Promise<Blob> {
+    return this.bytes(`marketplace/listings/${listingId}/versions/${version}/media/${sha256}`, false)
+  }
+
+  /** A raw body rather than the JSON envelope — the one place that differs. */
+  private async bytes(path: string, auth = true): Promise<Blob> {
+    const headers: Record<string, string> = {}
+    if (auth) {
+      const token = await this.options.tokens.get()
+      if (token) headers.Authorization = `Bearer ${token}`
+    }
+
+    const response = await this.http(`${this.options.baseUrl.replace(/\/$/, '')}/${path}`, { headers })
+
+    if (!response.ok) {
+      throw new ApiError(
+        this.codeForStatus(response.status),
+        `Could not fetch media (${response.status})`,
+        response.status,
+      )
+    }
+
+    return await response.blob()
+  }
+
   // ── sync ────────────────────────────────────────────────────────────────
 
   async pull(cursor: number, limit?: number): Promise<SyncPullResult> {
@@ -332,7 +411,7 @@ export class ApiClient {
     }
 
     const headers: Record<string, string> = { Accept: 'application/json' }
-    if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+    if (options.body !== undefined) headers['Content-Type'] = options.raw ?? 'application/json'
 
     if (options.auth !== false) {
       const token = await this.options.tokens.get()
@@ -342,7 +421,11 @@ export class ApiClient {
     const response = await this.http(url.toString(), {
       method: options.method ?? 'GET',
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body === undefined
+        ? undefined
+        : options.raw
+          ? (options.body as BodyInit)
+          : JSON.stringify(options.body),
     })
 
     const payload = await this.parse(response)

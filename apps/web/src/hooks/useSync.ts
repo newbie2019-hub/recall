@@ -3,6 +3,7 @@ import { collectionReady } from '@/db/boot'
 import * as local from '@/db/queries/sync'
 import { useAuth } from '@/lib/auth'
 import { IDLE_MS, backoffMs, sync } from '@/lib/sync'
+import { pullMedia, pushMedia } from '@/lib/mediaTransfer'
 
 /**
  * Runs the sync loop for as long as somebody is signed in. Mount it once.
@@ -26,6 +27,21 @@ export function useSync() {
       // on a cold load this hook mounts alongside the boot, not after it.
       await collectionReady
       const ok = await sync(client, user.id, local, reportSync)
+
+      // Bytes move *after* the rows, and never as part of them. A sync that
+      // stalls on a 4 MB plate is a sync that stops carrying reviews, and a
+      // review is the only thing in the product nothing can rebuild — so media
+      // is a bounded, best-effort pass that runs once the rows are safe, and a
+      // failure here never marks the sync failed.
+      if (ok && !stopped) {
+        try {
+          await pushMedia(client)
+          await pullMedia(client)
+        } catch {
+          // Already best-effort inside; this is the belt on the braces.
+        }
+      }
+
       failures = ok ? 0 : failures + 1
       if (!stopped) timer = setTimeout(() => void run(), ok ? IDLE_MS : backoffMs(failures))
     }

@@ -12,6 +12,7 @@ use App\Models\Listing;
 use App\Models\ListingInstall;
 use App\Models\ListingModerationEvent;
 use App\Models\ListingVersion;
+use App\Models\MediaFile;
 use App\Models\Note;
 use App\Models\NoteType;
 use App\Models\User;
@@ -179,13 +180,19 @@ final readonly class PublishService
      * its own ids for both (note types match on name plus field signature,
      * CARDS.md §4.5).
      *
-     * ponytail: no media. The bytes live on a per-account disk with no public
-     * read path, so a sha256 manifest here would only promise images the client
-     * cannot fetch. The upgrade is a manifest plus
-     * `GET /marketplace/media/{sha256}` scoped to a published version, and until
-     * it exists a published deck's images arrive broken.
+     * **The media manifest is what makes the images arrive.** Every `media/<sha>`
+     * reference in a published field is collected here, checked against what the
+     * publisher actually holds, and written into the version. It is also the
+     * authorization list: `MediaController::version` serves a hash only if this
+     * manifest names it, which is what keeps a publish from becoming a read of
+     * the publisher's whole library.
      *
-     * @return array{decks: list<array<string, mixed>>, note_types: list<array<string, mixed>>, notes: list<array<string, mixed>>}
+     * A reference the publisher no longer holds is dropped rather than failing
+     * the publish. The alternative is refusing to publish a deck because one
+     * image went missing two years ago, and the cloner gets exactly what the
+     * publisher can actually serve.
+     *
+     * @return array{decks: list<array<string, mixed>>, note_types: list<array<string, mixed>>, notes: list<array<string, mixed>>, media: list<array<string, mixed>>}
      */
     private function snapshot(User $publisher, Deck $root): array
     {
@@ -232,7 +239,64 @@ final readonly class PublishService
                 'fields' => $note->fields,
                 'tags' => $note->tags,
             ])->values()->all(),
+            'media' => $this->manifest($publisher, $notes, $noteTypes),
         ];
+    }
+
+    /**
+     * Every image and sound the published cards refer to.
+     *
+     * Notes store media as `media/<sha256>` inside their HTML (see
+     * `apps/web/src/lib/media.ts`), and a note type's CSS can carry one too, so
+     * both are scanned. The regex is deliberately narrow — a 64-character hex
+     * string after that exact prefix — because this list is an authorization
+     * decision and a loose pattern here widens what the version route will
+     * serve.
+     *
+     * @param  Collection<int, Note>  $notes
+     * @param  Collection<int, NoteType>  $noteTypes
+     * @return list<array<string, mixed>>
+     */
+    private function manifest(User $publisher, $notes, $noteTypes): array
+    {
+        // The raw values, not their JSON. `json_encode` escapes a forward slash
+        // by default, so `media/<sha>` becomes `media\/<sha>` and the pattern
+        // below silently matches nothing — which is exactly the bug this
+        // manifest exists to stop, arriving as an empty list rather than an
+        // error.
+        $text = $notes
+            ->flatMap(fn (Note $note): array => array_values((array) $note->fields))
+            ->concat($noteTypes->flatMap(fn (NoteType $type): array => [
+                (string) $type->css,
+                ...array_map(
+                    fn ($template): string => implode(' ', array_map('strval', (array) $template)),
+                    (array) $type->templates,
+                ),
+            ]))
+            ->map(fn ($value): string => (string) $value)
+            ->implode("\n");
+
+        preg_match_all('#media/([a-f0-9]{64})#i', $text, $found);
+        $referenced = array_values(array_unique(array_map('strtolower', $found[1] ?? [])));
+
+        if ($referenced === []) {
+            return [];
+        }
+
+        // Only what the publisher can actually serve. A dangling reference is
+        // dropped here rather than promised in the manifest and 404ing later.
+        return MediaFile::query()
+            ->where('user_id', $publisher->id)
+            ->whereIn('sha256', $referenced)
+            ->whereNotNull('completed_at')
+            ->get(['sha256', 'mime', 'size'])
+            ->map(fn (MediaFile $file): array => [
+                'sha256' => $file->sha256,
+                'mime' => $file->mime,
+                'size' => (int) $file->size,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

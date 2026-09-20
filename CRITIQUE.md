@@ -118,7 +118,10 @@ never studied, had no history to replay, and came back as new — correct
 behaviour from an incorrect setting. Wired, with the toggle now on the deck
 screen.
 
-**What is still wrong, and named rather than buried.**
+**What is still wrong, and named rather than buried.** *(Since scheduled: the
+media transport is in flight, and the rest of this list plus the other 46
+`ponytail:` markers in the tree are now **PHASES §11**, split into a phase for
+what is wrong today and a table of what is correct until a named threshold.)*
 
 - **Published decks carry no media.** The bytes have no HTTP path in either
   direction. This is Phase 5's deferral surfacing in Phase 8, and it is the
