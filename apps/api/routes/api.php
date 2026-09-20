@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AccountController;
+use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CollaborationController;
 use App\Http\Controllers\Api\V1\DeviceController;
@@ -60,6 +61,16 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::put('auth/password', [ProfileController::class, 'password'])
         ->middleware('throttle:5,1')
         ->name('auth.password');
+
+    // Phase 10a. `usage` and `consent` are cheap local reads and writes;
+    // `explain` costs real money per call, so it carries the tighter throttle.
+    Route::get('ai/usage', [AiController::class, 'usage'])->name('ai.usage');
+    Route::put('ai/consent', [AiController::class, 'consent'])
+        ->middleware('throttle:20,1')
+        ->name('ai.consent');
+    Route::post('ai/explain', [AiController::class, 'explain'])
+        ->middleware('throttle:30,60')
+        ->name('ai.explain');
 
     Route::put('onboarding', [OnboardingController::class, 'update'])
         ->middleware('throttle:20,1')

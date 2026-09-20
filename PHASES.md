@@ -8,9 +8,10 @@ Rule for every phase: it ends with something you can actually use. Estimates
 assume one developer.
 
 **Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
-· 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) · **next:
-Phase 10, designed in [AI.md](AI.md)** · 11 planned · 12 (mobile) deferred
-indefinitely at the product's request.
+· 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) ·
+**10a ✅ — the AI meter and the lapse explainer** · **next: 10b, the card
+doctor** · 11 planned · 12 (mobile) deferred indefinitely at the product's
+request.
 
 **Unpaid, oldest first:** the media transport at the end of Phase 8 — published
 and shared decks still arrive without their images.
@@ -593,7 +594,7 @@ that decide who may write at all.*
 
 ---
 
-## Phase 10 — AI card generation & summaries · ~3 weeks
+## Phase 10 — AI card generation & summaries · ~3 weeks · 10a ✅
 
 > **Rescoped in [AI.md](AI.md).** Three changes the research forced: the meter
 > ships *first*, with the cheapest feature, so nothing after it is untracked; a
@@ -601,6 +602,24 @@ that decide who may write at all.*
 > model measured reaches 64.3% usable cards and the unusable ones look fine; and
 > the generative-UI registry is one component until a second is asked for by
 > name. The sketch below is what AI.md replaces.
+
+- ✅ **10a — the meter, shipped before the features.** `Services/Ai/Claude.php`
+  is the only code path to Anthropic and cannot return without writing an
+  `ai_usage` row, including for the calls that fail: a refusal is an HTTP 200
+  with nothing usable and a truncation is half an answer at full price, so both
+  are billed and both are recorded. The ledger write is in `finally`, because an
+  exception after the response landed is money already spent. Quota is a `SUM`
+  over the log rather than a counter, checked per call — a quota checked once
+  per job stopped existing at the second call. No SDK: one POST through
+  Laravel's HTTP client, and only a 429 is ever retried, where it can still be
+  counted.
+- ✅ **The one feature it shipped with: "Why was I wrong?"** One call on the
+  answer side, user-initiated, disabled offline *with the reason*. It never
+  touches scheduling and never sits between a rating and the next card.
+- ✅ **Consent is off by default** (`users.ai_consent_at`) and nothing is sent
+  until it is on. Settings → AI shows the running spend, split by feature,
+  counted from the same rows an invoice would be.
+- ◻︎ 10b (card doctor) · ◻︎ 10c (source → candidates) · ◻︎ 10d (briefing).
 
 - Upload PDF / image / text → queued job → extract (PDF text layer, OCR
   fallback) → chunk → candidate cards.

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link, Navigate, NavLink, useParams } from 'react-router'
 import { ChevronLeft } from 'lucide-react'
+import { Ai } from '@/components/settings/Ai'
 import { Appearance } from '@/components/settings/Appearance'
 import { Data } from '@/components/settings/Data'
 import { Devices } from '@/components/settings/Devices'
@@ -48,6 +49,12 @@ const SECTIONS: { id: string; label: string; blurb: string; render: () => ReactN
     label: 'Appearance',
     blurb: 'Light, dark, or whatever this device is doing.',
     render: () => <Appearance />,
+  },
+  {
+    id: 'ai',
+    label: 'AI',
+    blurb: 'Off by default. What it costs, and the switch.',
+    render: () => <Ai />,
   },
   {
     id: 'data',

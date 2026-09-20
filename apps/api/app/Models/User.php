@@ -29,6 +29,10 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'sync_revision' => 'integer',
+            // Phase 10: the period window is compared as a date, never parsed
+            // from a string at the call site.
+            'ai_period_start' => 'datetime',
+            'ai_consent_at' => 'datetime',
         ];
     }
 

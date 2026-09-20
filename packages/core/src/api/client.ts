@@ -1,5 +1,6 @@
 import type {
   ApiEnvelope, ApiErrorBody, ApiErrorCode, DeviceIdentity, DeviceSummary,
+  AiExplanation, AiUsage,
   Session, SyncPayload, SyncPullResult, SyncPushResult,
 } from './types.ts'
 import type { OnboardingAnswers } from '../onboarding.ts'
@@ -186,6 +187,35 @@ export class ApiClient {
       method: 'PUT',
       body: { ...input, password_confirmation: input.password },
     })
+  }
+
+  // ── ai (Phase 10) ───────────────────────────────────────────────────────
+
+  /** This period's spend. Safe to poll; it is one indexed SUM. */
+  aiUsage(): Promise<AiUsage> {
+    return this.request<AiUsage>('ai/usage', { idempotent: true })
+  }
+
+  /** Turn the subsystem on for this account, or off again. */
+  aiConsent(enabled: boolean): Promise<AiUsage> {
+    return this.request<AiUsage>('ai/consent', { method: 'PUT', body: { enabled }, idempotent: true })
+  }
+
+  /**
+   * Why a card was missed.
+   *
+   * The card travels in the request because the collection lives on the device
+   * — the server holds a sync log, not a rendered card — which also keeps this
+   * working for a note that has not synced yet.
+   *
+   * Never retried: a retry is a second real charge for the same question.
+   */
+  aiExplain(input: {
+    fields: Record<string, string>
+    deck?: string
+    lapses?: number
+  }): Promise<AiExplanation> {
+    return this.request<AiExplanation>('ai/explain', { method: 'POST', body: input })
   }
 
   /**

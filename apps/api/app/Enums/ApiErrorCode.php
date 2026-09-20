@@ -22,6 +22,16 @@ enum ApiErrorCode: string
     case PayloadTooLarge = 'payload_too_large';
     case ServerError = 'server_error';
 
+    // Phase 10. Each one is a different thing for the client to *say*, which is
+    // why they are separate codes rather than one `ai_error`: "turn it on in
+    // Settings", "you have used this month's allowance" and "the model is
+    // unreachable" lead to three different next actions.
+    case AiUnavailable = 'ai_unavailable';
+    case AiConsentRequired = 'ai_consent_required';
+    case AiQuotaExceeded = 'ai_quota_exceeded';
+    case AiRefused = 'ai_refused';
+    case AiUpstream = 'ai_upstream';
+
     public function status(): int
     {
         return match ($this) {
@@ -32,6 +42,14 @@ enum ApiErrorCode: string
             self::PayloadTooLarge => 413,
             self::RateLimited => 429,
             self::ServerError => 500,
+            self::AiConsentRequired => 403,
+            // Payment Required, and meant literally: the allowance is spent.
+            // Deliberately not 429 — a client that retries a rate limit must
+            // not retry this, because waiting changes nothing until the period
+            // rolls over.
+            self::AiQuotaExceeded => 402,
+            self::AiRefused => 422,
+            self::AiUnavailable, self::AiUpstream => 503,
         };
     }
 }

@@ -22,6 +22,12 @@ export type ApiErrorCode =
   | 'rate_limited'
   | 'payload_too_large'
   | 'server_error'
+  /** Phase 10. Four different things to say, so four codes. */
+  | 'ai_unavailable'
+  | 'ai_consent_required'
+  | 'ai_quota_exceeded'
+  | 'ai_refused'
+  | 'ai_upstream'
   /** Not from the server: no network, DNS failure, the request never landed. */
   | 'offline'
 
@@ -110,4 +116,31 @@ export interface SyncPushResult {
   applied: Partial<Record<SyncResourceName, number>>
   /** Rows the server already had, or that lost last-write-wins. */
   skipped: Partial<Record<SyncResourceName, string[]>>
+}
+
+
+/**
+ * What this account has spent on AI this period.
+ *
+ * Every figure is derived from the append-only `ai_usage` log rather than from
+ * a counter, so the total in Settings and the total on the Anthropic invoice
+ * are the same query over the same rows (AI.md §3.2).
+ */
+export interface AiUsage {
+  plan: string
+  period_start: string
+  period_end: string
+  spent_micros: number
+  limit_micros: number
+  remaining_micros: number
+  by_feature: Record<string, { calls: number; micros: number }>
+  /** Whether this account has turned the subsystem on. Nothing is sent until it has. */
+  consented: boolean
+  /** Whether the server has an API key at all. */
+  available: boolean
+}
+
+export interface AiExplanation {
+  explanation: string
+  confusable_with: string
 }

@@ -372,8 +372,15 @@ and the partial output tokens — or a flaky connection becomes untracked spend.
 
 **6.5 Cache tokens.** `input_tokens` excludes them. One test, hand-computed: a
 call with `input=1000, cache_write=2000, cache_read=4000, output=500` on Opus 5
-is `1000×5 + 2000×6.25 + 4000×0.5 + 500×25 = 31,500` micro-dollars. Assert that
-number. Phase 8's lesson was that a contract test must read the shape it actually
+is `1000×5 + 2000×6.25 + 4000×0.5 + 500×25` = `5,000 + 12,500 + 2,000 + 12,500`
+= **32,000** micro-dollars. Assert that number.
+
+> *Corrected while building 10a.* This line read **31,500** in the first three
+> drafts — the four terms are right and the addition was not. It is a small,
+> apt joke at the expense of the paragraph that follows it: the reason to assert
+> a hand-computed number is that hand-computed numbers are wrong, and a test
+> asserting "a row exists" would have shipped the error into the price table.
+> `AiLedgerTest::test_cost_counts_cache_tokens_separately_from_input`. Phase 8's lesson was that a contract test must read the shape it actually
 produces (`assertCount(2, 'preview')` passed on an object with two keys) — assert
 the arithmetic, not that a row exists.
 

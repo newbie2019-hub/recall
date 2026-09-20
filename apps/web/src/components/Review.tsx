@@ -19,6 +19,7 @@ import { AudioAutoplay } from './AudioAutoplay'
 import { RATING_SFX, sfx } from '@/lib/sfx'
 import * as repo from '@/db/repo'
 import { stopwatch, type Stopwatch } from '@/lib/stopwatch'
+import { WhyWrong } from '@/components/WhyWrong'
 import { answerCard } from '@/db/queries/filtered'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { previewIntervals, type RatingValue } from '@recall/core'
@@ -233,6 +234,11 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
               inert={!revealed}
             >
               <CardFrame html={painted.back} css={sc.noteType.css} />
+              {/* Keyed on the card, so the answer for one card never survives
+                  onto the next. Below the frame and outside it: this is app
+                  text, not card content, and card content gets an iframe
+                  because it is untrusted (README rule 5). */}
+              {revealed && <WhyWrong key={sc.card.id} card={sc} />}
             </div>
           </div>
         </SpecimenTag>
