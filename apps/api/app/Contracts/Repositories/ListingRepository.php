@@ -29,6 +29,14 @@ interface ListingRepository
     public function findDistributable(string $id): ?Listing;
 
     /**
+     * The same rule in bulk, for the update check a collection makes on load.
+     *
+     * @param  list<string>  $ids
+     * @return Collection<int, Listing>
+     */
+    public function distributableByIds(array $ids): Collection;
+
+    /**
      * Everything this publisher has, in every state.
      *
      * @return Collection<int, Listing>

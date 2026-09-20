@@ -26,8 +26,18 @@ export const SEED = {
     // rather than dumping everything it has — the behaviour that keeps a 20k
     // imported deck usable.
     { id: 'neuro', parent_id: 'anatomy', name: 'Neuroanatomy', new_per_day: 2 },
-    { id: 'pharm', parent_id: null, name: 'Pharmacology' },
-  ] as { id: string; parent_id: string | null; name: string; retention_target?: number; new_per_day?: number }[],
+    // Sibling burying off, deliberately. This deck holds the reversed note that
+    // demonstrates a card being withdrawn and coming back, and with burying on
+    // — the default everywhere else — its second card is hidden until tomorrow
+    // the moment the first is answered. On first run that reads as half the
+    // deck missing, and it makes the one behaviour this note exists to show
+    // unreachable in a single sitting.
+    { id: 'pharm', parent_id: null, name: 'Pharmacology', bury_new: 0, bury_reviews: 0 },
+  ] as {
+    id: string; parent_id: string | null; name: string
+    retention_target?: number; new_per_day?: number
+    bury_new?: number; bury_reviews?: number
+  }[],
 
   notes: <SeedNote[]>[
     basic('heart', 'Which valve prevents backflow into the left atrium?',

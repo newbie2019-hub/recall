@@ -408,6 +408,8 @@ export interface DeckRow {
   new: number
   retention_target: number
   new_per_day: number
+  /** Hide a note's other cards until tomorrow once one of them is answered. */
+  bury_new: number
   /** 1 for a filtered deck, whose cards are borrowed and go home when it empties. */
   filtered: number
 }
@@ -585,13 +587,27 @@ export const deleteDeck = (deckId: string, now = Date.now()) =>
  * reschedules retroactively, because the log records what was actually shown
  * and when, and rewriting that would be a lie.
  */
-export const setDeckOptions = (deckId: string, retention: number, newPerDay: number) =>
-  db.run('UPDATE decks SET retention_target = ?, new_per_day = ?, updated_at = ? WHERE id = ?', [
-    retention,
-    Math.min(9999, Math.max(0, Math.round(newPerDay) || 0)),
-    Date.now(),
-    deckId,
-  ])
+export const setDeckOptions = (
+  deckId: string,
+  retention: number,
+  newPerDay: number,
+  burySiblings = true,
+) =>
+  db.run(
+    `UPDATE decks SET retention_target = ?, new_per_day = ?, bury_new = ?, bury_reviews = ?,
+            updated_at = ? WHERE id = ?`,
+    [
+      retention,
+      Math.min(9999, Math.max(0, Math.round(newPerDay) || 0)),
+      // One switch for both columns. They are separate in the schema because
+      // Anki separates them, and a second checkbox for "bury new siblings but
+      // not review siblings" is a distinction nobody has ever wanted to make.
+      burySiblings ? 1 : 0,
+      burySiblings ? 1 : 0,
+      Date.now(),
+      deckId,
+    ],
+  )
 
 /**
  * A card's deck, which is the note's deck unless a template overrides it.
@@ -671,7 +687,7 @@ export async function deckTree(now = Date.now()): Promise<DeckRow[]> {
            LEFT JOIN intro i ON i.id = d.id
        )
      SELECT t.id, t.parent_id, t.name, t.path, t.depth,
-            dk.retention_target, dk.new_per_day, dk.filtered,
+            dk.retention_target, dk.new_per_day, dk.bury_new, dk.filtered,
             COALESCE(SUM(c.due), 0) AS due,
             COALESCE(SUM(c.new), 0) AS new
        FROM tree t
@@ -1144,8 +1160,10 @@ export async function seedIfEmpty() {
 
   for (const d of SEED.decks)
     stmts.push({
-      sql: `INSERT INTO decks (id, parent_id, name, retention_target, new_per_day) VALUES (?,?,?,?,?)`,
-      params: [d.id, d.parent_id, d.name, d.retention_target ?? 0.9, d.new_per_day ?? 20],
+      sql: `INSERT INTO decks (id, parent_id, name, retention_target, new_per_day, bury_new, bury_reviews)
+            VALUES (?,?,?,?,?,?,?)`,
+      params: [d.id, d.parent_id, d.name, d.retention_target ?? 0.9, d.new_per_day ?? 20,
+               d.bury_new ?? 1, d.bury_reviews ?? 1],
     })
 
   for (const note of SEED.notes) {

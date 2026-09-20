@@ -19,6 +19,10 @@ class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'email_verified' => $this->email_verified_at !== null,
+            // The app chrome needs it to know whether to offer the queue at
+            // all. Authorization is still the policy's — this only decides
+            // whether a link is drawn, never whether the call is allowed.
+            'is_moderator' => (bool) $this->is_moderator,
         ];
     }
 }

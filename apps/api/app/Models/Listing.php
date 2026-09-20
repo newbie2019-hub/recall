@@ -56,6 +56,8 @@ class Listing extends Model
             'latest_version' => 'integer',
             'install_count' => 'integer',
             'open_report_count' => 'integer',
+            'rating_count' => 'integer',
+            'rating_sum' => 'integer',
             'published_at' => 'datetime',
             'moderated_at' => 'datetime',
         ];
@@ -101,6 +103,37 @@ class Listing extends Model
     public function installs(): HasMany
     {
         return $this->hasMany(ListingInstall::class);
+    }
+
+    /**
+     * @return HasMany<ListingRating, $this>
+     */
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(ListingRating::class);
+    }
+
+    /**
+     * The decision history, newest first. Append-only — see the migration.
+     *
+     * @return HasMany<ListingModerationEvent, $this>
+     */
+    public function moderationEvents(): HasMany
+    {
+        return $this->hasMany(ListingModerationEvent::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * The average, to one decimal, or null when nobody has rated it.
+     *
+     * Null rather than zero on purpose: "0.0 ★" and "nobody has said" are
+     * different facts, and only one of them is fair to print on a new deck.
+     */
+    public function ratingAverage(): ?float
+    {
+        return $this->rating_count > 0
+            ? round($this->rating_sum / $this->rating_count, 1)
+            : null;
     }
 
     /**

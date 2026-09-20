@@ -98,8 +98,57 @@ class BrowseTest extends MarketplaceTestCase
 
         $this->assertSame(2, $response->json('data.latest_version'));
         $this->assertSame([2, 1], array_column($response->json('data.versions'), 'version'));
-        $this->assertCount(2, $response->json('preview'));
         $this->assertSame(['anatomy', 'thorax'], $response->json('data.tags'));
+
+        // The preview carries the note types with the sample notes. Without
+        // them a card cannot be rendered, and the listing page would have to
+        // download the whole version — megabytes — to draw three sample cards.
+        $this->assertCount(2, $response->json('preview.notes'));
+        $this->assertCount(1, $response->json('preview.note_types'));
+        $this->assertArrayHasKey('templates', $response->json('preview.note_types.0'));
+        // Never the publisher's own guid: a clone mints its own, or cloning
+        // your own listing would overwrite the notes you published.
+        $this->assertArrayHasKey('source_guid', $response->json('preview.notes.0'));
+        $this->assertArrayNotHasKey('guid', $response->json('preview.notes.0'));
+    }
+
+    public function test_the_update_check_answers_for_a_whole_collection_at_once(): void
+    {
+        $publisher = $this->account();
+        $anatomy = $this->publishedListing($publisher, $this->deckWithNotes($publisher, 'Anatomy'));
+        $unlisted = $this->publishedListing($publisher, $this->deckWithNotes($publisher, 'Neuro'), [
+            'title' => 'Cranial nerves',
+            'visibility' => Listing::VISIBILITY_UNLISTED,
+        ]);
+        $removed = $this->publishedListing($publisher, $this->deckWithNotes($publisher, 'Pharm'), [
+            'title' => 'Beta blockers',
+        ]);
+
+        $this->actingAsToken($this->tokenFor($this->account(moderator: true)))
+            ->postJson(route('moderation.listings.takedown', $removed), ['reason' => 'Scans.'])
+            ->assertOk();
+
+        $response = $this->anonymous()->getJson(route('marketplace.updates', [
+            'ids' => implode(',', [$anatomy->id, $unlisted->id, $removed->id, 'not-a-uuid']),
+        ]))->assertOk();
+
+        $ids = array_column($response->json('data'), 'id');
+        sort($ids);
+        $expected = [$anatomy->id, $unlisted->id];
+        sort($expected);
+
+        // A deck cloned by link still gets its updates; a taken-down one simply
+        // drops out, which the client reads as "no update" rather than an error
+        // about a deck it is entitled to keep studying.
+        $this->assertSame($expected, $ids);
+        $this->assertSame(1, $response->json('data.0.latest_version'));
+    }
+
+    public function test_the_update_check_with_no_usable_ids_answers_empty(): void
+    {
+        $this->anonymous()->getJson(route('marketplace.updates'))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
     }
 
     public function test_a_publisher_sees_every_state_of_their_own_shelf(): void

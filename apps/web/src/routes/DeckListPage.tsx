@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Filter, FolderPlus, Layers, MoreHorizontal, Plus } from 'lucide-react'
+import { Compass, Filter, FolderPlus, Layers, MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
+import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -12,12 +13,16 @@ import { ApkgButtons } from '@/components/Apkg'
 import { AccountMenu } from '@/components/AccountMenu'
 import { SyncBanner } from '@/components/SyncBanner'
 import { useDecks } from '@/hooks/useDecks'
+import { useClonedDeckUpdates } from '@/hooks/useClonedDeckUpdates'
 import { paths } from './paths'
 
 /** The front door. Never an auth wall — PLAN.md §2.6. */
 export function DeckListPage() {
   const navigate = useNavigate()
   const { decks, error, reload } = useDecks()
+  // Cloned decks whose publisher has shipped a newer version. An offer, never an
+  // action: nothing upstream writes into a deck that has left (PHASES §8).
+  const updates = useClonedDeckUpdates()
   const [deckDialog, setDeckDialog] = useState<DeckDialogMode | null>(null)
 
   if (error) {
@@ -59,6 +64,13 @@ export function DeckListPage() {
           <Button variant="outline" size="sm" onClick={() => navigate(paths.noteTypes)}>
             <Layers /> Note types
           </Button>
+          {/* The marketplace's only way in. Before this the screens existed and
+              nothing in the app linked to them. */}
+          <Button variant="outline" size="sm" asChild>
+            <Link to={paths.marketplace}>
+              <Compass /> Explore
+            </Link>
+          </Button>
           <ApkgButtons onImported={() => void reload()} />
           {firstDeck && (
             <Button variant="outline" size="sm" onClick={() => navigate(paths.newNote(firstDeck))}>
@@ -90,6 +102,15 @@ export function DeckListPage() {
                 </Badge>
               )}
             </button>
+            {updates.has(d.id) && (
+              <Link
+                to={paths.listing(updates.get(d.id)!.listingId)}
+                className="mr-1 flex items-center gap-1 font-mono text-[0.625rem] text-hematoxylin hover:underline"
+                title={`The publisher has v${updates.get(d.id)!.latestVersion}. Your scheduling is kept.`}
+              >
+                <RefreshCw className="size-3" />v{updates.get(d.id)!.latestVersion}
+              </Link>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" aria-label={`${d.name} options`}>
@@ -102,6 +123,9 @@ export function DeckListPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setDeckDialog({ kind: 'edit', deck: d })}>
                   Rename or move
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(paths.publishDeck(d.id))}>
+                  Publish…
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => setDeckDialog({ kind: 'delete', deck: d })}>

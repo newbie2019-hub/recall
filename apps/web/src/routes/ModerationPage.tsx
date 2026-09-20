@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   ago, approveListing, dismissReport, openReports, REPORT_REASONS, takedownListing,
-  type ModerationReport,
+  unlistListing, type ModerationReport,
 } from '@/lib/marketplace'
 import { NotFoundPage } from './NotFoundPage'
 import { paths } from './paths'
@@ -21,11 +21,13 @@ import { paths } from './paths'
  * page that said "you are not a moderator" would be a page that tells every
  * visitor the queue exists.
  *
- * Three outcomes, each one click plus a reason — "a reported deck is down in
+ * Four outcomes, each one click plus a reason — "a reported deck is down in
  * under a minute with a record of why" (PHASES §8) is a target this screen can
- * miss by making the moderator fill in a form. Take down and approve act on the
- * *listing*; dismiss closes the report and leaves the deck alone. They are
- * deliberately not one "resolve" call, because they are not one decision.
+ * miss by making the moderator fill in a form. Take down, unlist and approve
+ * act on the *listing*; dismiss closes the report and leaves the deck alone.
+ * They are deliberately not one "resolve" call, because they are not one
+ * decision — and unlist exists so that "miscategorised" and "infringing" do not
+ * share a button.
  */
 export function ModerationPage() {
   const [reports, setReports] = useState<ModerationReport[] | null>(null)
@@ -77,11 +79,12 @@ function ReportRow({ report, onDone }: { report: ModerationReport; onDone: () =>
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
-  async function act(what: 'dismiss' | 'takedown' | 'approve') {
+  async function act(what: 'dismiss' | 'takedown' | 'unlist' | 'approve') {
     setBusy(true)
     try {
       if (what === 'dismiss') await dismissReport(report.id, note.trim())
       if (what === 'takedown') await takedownListing(report.listing.id, note.trim())
+      if (what === 'unlist') await unlistListing(report.listing.id, note.trim())
       if (what === 'approve') await approveListing(report.listing.id, note.trim())
       toast(`${report.listing.title}: ${what}`)
       onDone()
@@ -138,6 +141,15 @@ function ReportRow({ report, onDone }: { report: ModerationReport; onDone: () =>
         </Button>
         <Button size="sm" variant="outline" disabled={busy || !note.trim()} onClick={() => void act('approve')}>
           {counter ? 'Reinstate' : 'Approve'}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || !note.trim()}
+          title="Out of Explore, link still works. Existing clones keep updating."
+          onClick={() => void act('unlist')}
+        >
+          Unlist
         </Button>
         <Button
           size="sm"

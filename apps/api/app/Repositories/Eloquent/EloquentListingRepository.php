@@ -69,6 +69,23 @@ final class EloquentListingRepository implements ListingRepository
     }
 
     /**
+     * Three columns and no relations: this answers "is there a newer version"
+     * for every cloned deck in a collection at once, and loading a publisher or
+     * a version payload to compare two integers would make the cheapest call in
+     * the marketplace the most expensive one.
+     *
+     * @param  list<string>  $ids
+     * @return Collection<int, Listing>
+     */
+    public function distributableByIds(array $ids): Collection
+    {
+        return Listing::query()
+            ->distributable()
+            ->whereIn('id', $ids)
+            ->get(['id', 'title', 'latest_version']);
+    }
+
+    /**
      * @return Collection<int, Listing>
      */
     public function forPublisher(User $publisher): Collection

@@ -7,6 +7,7 @@ namespace App\Services\Marketplace;
 use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Models\Listing;
+use App\Models\ListingModerationEvent;
 use App\Models\ListingReport;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -55,6 +56,13 @@ final readonly class ModerationService
             $report->fill(['reason' => $reason, 'detail' => $detail])->save();
             $listing->increment('open_report_count');
 
+            // A counter-notice is a step in the listing's history, not only an
+            // item in a queue: reinstating a deck has to be readable afterwards
+            // as an answer to something, and this is the row that says so.
+            if ($kind === ListingReport::KIND_COUNTER_NOTICE) {
+                $this->record($listing, null, ListingModerationEvent::ACTION_COUNTER_NOTICE, $detail);
+            }
+
             return $report;
         });
     }
@@ -79,6 +87,33 @@ final readonly class ModerationService
             ])->save();
 
             $this->closeOpenReports($listing, $moderator, ListingReport::STATUS_UPHELD, $reason);
+            $this->record($listing, $moderator, ListingModerationEvent::ACTION_TAKEDOWN, $reason);
+
+            return $listing;
+        });
+    }
+
+    /**
+     * The middle setting PHASES §8 asks for between "fine" and "gone".
+     *
+     * A deck that is miscategorised, or wrong in a way that is nobody's fault,
+     * should stop being *recommended* without being erased — the link keeps
+     * working, existing clones update as before, and it leaves the catalogue.
+     * Having only takedown is what makes moderators reach for takedown.
+     */
+    public function unlist(User $moderator, Listing $listing, string $reason): Listing
+    {
+        return DB::transaction(function () use ($moderator, $listing, $reason): Listing {
+            $listing->forceFill([
+                'visibility' => Listing::VISIBILITY_UNLISTED,
+                'moderated_by' => $moderator->id,
+                'moderated_at' => Carbon::now(),
+                'moderation_reason' => $reason,
+                'open_report_count' => 0,
+            ])->save();
+
+            $this->closeOpenReports($listing, $moderator, ListingReport::STATUS_UPHELD, $reason);
+            $this->record($listing, $moderator, ListingModerationEvent::ACTION_UNLIST, $reason);
 
             return $listing;
         });
@@ -104,6 +139,7 @@ final readonly class ModerationService
             ])->save();
 
             $this->closeOpenReports($listing, $moderator, ListingReport::STATUS_DISMISSED, $note);
+            $this->record($listing, $moderator, ListingModerationEvent::ACTION_APPROVE, $note);
 
             return $listing;
         });
@@ -124,6 +160,13 @@ final readonly class ModerationService
                 'resolution_note' => $note,
             ])->save();
 
+            $this->record(
+                $report->listing,
+                $moderator,
+                ListingModerationEvent::ACTION_DISMISS,
+                $note,
+            );
+
             Listing::query()
                 ->whereKey($report->listing_id)
                 ->where('open_report_count', '>', 0)
@@ -131,6 +174,27 @@ final readonly class ModerationService
 
             return $report;
         });
+    }
+
+    /**
+     * Append one row to the trail. Never updates, never deletes.
+     *
+     * `$moderator` is null for a publisher's own counter-notice, which is the
+     * only event here that is not a moderator's act.
+     */
+    public function record(?Listing $listing, ?User $moderator, string $action, ?string $reason): void
+    {
+        if ($listing === null) {
+            return;
+        }
+
+        ListingModerationEvent::query()->create([
+            'listing_id' => $listing->id,
+            'moderator_id' => $moderator?->id,
+            'action' => $action,
+            'resulting_status' => $listing->status,
+            'reason' => $reason,
+        ]);
     }
 
     private function closeOpenReports(Listing $listing, User $moderator, string $status, ?string $note): void

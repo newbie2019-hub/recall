@@ -76,6 +76,17 @@ export function AccountMenu() {
           <Link to={paths.settings()}>Settings</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
+          <Link to={paths.myListings}>Your published decks</Link>
+        </DropdownMenuItem>
+        {/* Drawn only for a moderator, but never the authorization itself —
+            `can:moderate` on the server is, and the queue 403s regardless. */}
+        {user.is_moderator && (
+          <DropdownMenuItem asChild>
+            <Link to={paths.moderation}>Moderation queue</Link>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
           <Link to={paths.settings('devices')}>Devices &amp; sign out</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -21,6 +21,8 @@ import { MarketplacePage } from '@/routes/MarketplacePage'
 import { ListingPage } from '@/routes/ListingPage'
 import { PublishPage } from '@/routes/PublishPage'
 import { ModerationPage } from '@/routes/ModerationPage'
+import { MyListingsPage } from '@/routes/MyListingsPage'
+import { LegalPage } from '@/routes/LegalPage'
 
 /**
  * The route table.
@@ -68,7 +70,11 @@ export default function App() {
 
         {/* Phase 8 — marketplace. /explore is public. */}
         <Route path="/explore" element={<MarketplacePage />} />
+        {/* Static segment first: react-router ranks it above `:listingId`
+            anyway, and the order here says so out loud. */}
+        <Route path="/explore/mine" element={<MyListingsPage />} />
         <Route path="/explore/:listingId" element={<ListingPage />} />
+        <Route path="/legal" element={<LegalPage />} />
         <Route path="/decks/:deckId/publish" element={<PublishPage />} />
         <Route path="/moderation" element={<ModerationPage />} />
 

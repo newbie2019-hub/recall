@@ -91,6 +91,20 @@ reviews(id, card_id, user_id, ts, rating, duration_ms)   -- APPEND ONLY
 media(id, note_id, kind, path, sha256, bytes)
 deck_versions(id, deck_id, semver, changelog)            -- marketplace
 deck_clones(id, source_deck_id, cloned_deck_id, at_version)
+
+-- As built in Phase 8. The sketch above kept the version beside the deck; the
+-- build split the two, because a listing outlives the deck it was cut from and
+-- the takedown switch has to live somewhere a deletion cannot reach:
+listings(id, user_id, deck_id, title, tags, visibility, status,
+         latest_version, install_count, rating_count, rating_sum,
+         open_report_count, moderated_by, moderated_at, moderation_reason)
+listing_versions(id, listing_id, version, semver, changelog, payload,
+                 checksum, rights_attestation, attested_ip)   -- IMMUTABLE
+listing_installs(id, listing_id, user_id, deck_id, version)   -- no FK to decks
+listing_ratings(id, listing_id, user_id, stars)               -- installs only
+listing_reports(id, listing_id, reporter_id, kind, reason, detail, status, …)
+listing_moderation_events(id, listing_id, moderator_id, action,
+                          resulting_status, reason)           -- APPEND ONLY
 yjs_updates(id, doc_id, blob, created_at)                -- collab log
 yjs_snapshots(doc_id, blob, up_to_update_id)             -- compaction
 ```
@@ -264,7 +278,7 @@ are cheap now and very expensive to retrofit.
 | **Client-generated UUIDs as primary keys** | A retried push must not duplicate. `INSERT … ON CONFLICT(id) DO NOTHING` makes the whole review push idempotent for free — the append-only log paying for itself again. |
 | **Cursor pagination, never page numbers** | Sync pulls tens of thousands of rows while new ones are being written; offset pagination silently skips rows. |
 | **Both timestamps on every review** — `client_ts` *and* `server_received_at` | Phone clocks are wrong and users change timezones mid-flight. `replayReviews()` needs the client's ordering, but the server must not be fooled by it. Clamp absurd values, never rewrite them. |
-| **Chunked, resumable media upload**, content-addressed by sha256 | A 40 MB deck upload on mobile data will be interrupted. sha256 means an interrupted upload resumes instead of restarting, and identical media is stored once. |
+| **Chunked, resumable media upload**, content-addressed by sha256 | A 40 MB deck upload on mobile data will be interrupted. sha256 means an interrupted upload resumes instead of restarting, and identical media is stored once. **Not built.** `media` rows sync as metadata and the bytes have no endpoint in either direction, which is why a published deck's images do not travel (PHASES.md §8). The first cut can be single-shot per file — resumability is the second. |
 | **`ETag` / `If-None-Match` on deck and media reads** | Metered connections. A no-op sync should cost a few hundred bytes. |
 | **Envelope every list response** — `{ data, next_cursor, server_time }` | `server_time` lets a client detect its own clock skew without an extra endpoint. |
 | **Errors as a stable shape** — `{ error: { code, message } }`, code is a string | An old build has to branch on something that will not be reworded. |

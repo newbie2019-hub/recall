@@ -11,6 +11,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import * as repo from '@/db/repo'
 
 /**
@@ -46,6 +47,7 @@ export function Browse({
   const [options, setOptions] = useState({
     retention: String(deck.retention_target),
     newPerDay: String(deck.new_per_day),
+    bury: deck.bury_new !== 0,
   })
 
   /**
@@ -58,7 +60,7 @@ export function Browse({
     setOptions(next)
     const perDay = Number(next.newPerDay)
     if (next.newPerDay.trim() && Number.isFinite(perDay))
-      void repo.setDeckOptions(deck.id, Number(next.retention), perDay)
+      void repo.setDeckOptions(deck.id, Number(next.retention), perDay, next.bury)
   }
 
   const load = useCallback(async () => setNotes(await repo.notesInDeck(deck.id)), [deck.id])
@@ -129,9 +131,21 @@ export function Browse({
                  value={options.newPerDay}
                  onChange={(e) => saveOptions({ newPerDay: e.target.value })} />
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="bury" className={LABEL}>Bury siblings</Label>
+          <div className="flex h-8 items-center gap-2">
+            <Switch
+              id="bury"
+              checked={options.bury}
+              onCheckedChange={(v) => saveOptions({ bury: v })}
+            />
+            <span className="text-xs text-muted-foreground">until tomorrow</span>
+          </div>
+        </div>
         <p className="max-w-xs text-xs text-muted-foreground">
           Applies to {deck.name} itself. Changing retention affects the next review of
-          each card, never one already logged.
+          each card, never one already logged. Burying hides a note's other cards once
+          you answer one, so you do not grade a reverse you were just shown.
         </p>
       </div>
 

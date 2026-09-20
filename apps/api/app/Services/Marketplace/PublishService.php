@@ -10,6 +10,7 @@ use App\Exceptions\ApiException;
 use App\Models\Deck;
 use App\Models\Listing;
 use App\Models\ListingInstall;
+use App\Models\ListingModerationEvent;
 use App\Models\ListingVersion;
 use App\Models\Note;
 use App\Models\NoteType;
@@ -37,7 +38,10 @@ final readonly class PublishService
     /** A deck tree deeper than this is a cycle somebody pushed, not a subject. */
     private const MAX_DEPTH = 32;
 
-    public function __construct(private ListingRepository $listings) {}
+    public function __construct(
+        private ListingRepository $listings,
+        private ModerationService $moderation,
+    ) {}
 
     /**
      * Publish a deck, or cut the next version of one already listed.
@@ -101,6 +105,16 @@ final readonly class PublishService
                 'rights_attestation' => $input['rights_attestation'],
                 'attested_ip' => $ip,
             ]);
+
+            // The trail starts with the publication, not with the first
+            // complaint about it: "v3 went up on the 4th" is half of every
+            // question a moderator is later asked.
+            $this->moderation->record(
+                $listing,
+                null,
+                ListingModerationEvent::ACTION_PUBLISH,
+                trim('v'.$listing->latest_version.' '.($input['changelog'] ?? '')),
+            );
 
             return $listing->refresh();
         });

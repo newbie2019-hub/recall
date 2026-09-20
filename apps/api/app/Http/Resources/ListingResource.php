@@ -31,6 +31,11 @@ class ListingResource extends JsonResource
             'visibility' => $this->visibility,
             'latest_version' => $this->latest_version,
             'install_count' => $this->install_count,
+            // Null when nobody has rated it. The tile prints the count beside
+            // the average for the same reason: 5.0 from one person is not the
+            // same claim as 4.3 from ninety, and a bare star hides which it is.
+            'rating_average' => $this->ratingAverage(),
+            'rating_count' => (int) $this->rating_count,
             'published_at' => $this->published_at?->toIso8601String(),
             'publisher' => $this->whenLoaded('user', fn (): array => [
                 'id' => $this->user->id,

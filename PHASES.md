@@ -7,7 +7,8 @@ deferred to post-launch**.
 Rule for every phase: it ends with something you can actually use. Estimates
 assume one developer.
 
-**Status:** 0 ✅ · 1 ✅ · 2 ✅ · 3 ✅ · 4 ✅ · **5 in progress** · 6–12 planned.
+**Status:** 0–4 ✅ · 5 ✅ (one line open: server-side FSRS) · 6 ✅ · 7 ✅ · 8 ✅ ·
+**next: the media transport at the end of Phase 8, then Phase 9** · 10–12 planned.
 
 Inside a phase, ✅ is landed and tested, ◻︎ is not started, ⚠️ is partly there and
 says what is missing.
@@ -257,17 +258,17 @@ existing note grow a card that keeps its history.
   4.8).
 - ✅ `devices` carries the token *and* that device's sync cursor — same row, so
   revoking a device is one delete.
-- ⚠️ **The invariant: a 401 never takes the collection away.** Sign-in is a state
+- ✅ **The invariant: a 401 never takes the collection away.** Sign-in is a state
   (`synced` / `sync paused` / `local only`), never a wall. Expiry queues rows and
-  shows one banner. *The client reports a 401 without acting on it — it does not
-  even drop the token. The three-state banner is UI that does not exist yet.*
+  shows one banner. *`SyncBanner` carries the three states and `AccountMenu`
+  prints the one in force beside the account it belongs to.*
 - ✅ **Router first** (UI.md §6). A reset link has to land on a URL, marketplace
   decks have to be shareable, and Phase 12's universal links must resolve to the
   same paths. Four screens on a `View` union was right; twelve is not. Paths are
   the contract mobile copies. *Built on react-router; every path lives in
   `src/routes/paths.ts` so a rename is a compiler error rather than a dead link
   found in an email months later.*
-- ◻︎ **Auth pages:** sign in · create account · forgot password · reset password. **← next**
+- ✅ **Auth pages:** sign in · create account · forgot password · reset password.
   Not the front door — reached *from* the deck list, never placed in front of it.
   No email-verification wall; verification gates marketplace publishing only.
 - ✅ **The decision that gates them:** signing into account B on a device already
@@ -275,12 +276,12 @@ existing note grow a card that keeps its history.
   account being signed into.** No prompt, nothing destroyed — but a borrowed
   device donates its history to whoever signs in next, which is the cost that was
   accepted knowingly.
-- ◻︎ **Who is signed in is visible from the app chrome**, not only from Settings.
+- ✅ **Who is signed in is visible from the app chrome**, not only from Settings.
   Name, email and sync state in one glance, because "always adopt the local rows
   into the account being signed into" means a borrowed device donates its
   history — and the person holding it has to be able to see which account is
   about to receive their reviews without navigating to find out.
-- ◻︎ **Settings:** profile · devices (revoke = sign out that phone) · storage
+- ✅ **Settings:** profile · devices (revoke = sign out that phone) · storage
   (per-deck offline opt-in with size estimate) · scheduling defaults ·
   appearance (system/light/dark — there is no toggle today) · data export and
   account deletion. Sign-out counts unsynced reviews before offering to clear
@@ -290,21 +291,26 @@ existing note grow a card that keeps its history.
   pagination, `{ data, next_cursor, server_time }`, stable string error codes,
   `client_ts` *and* `server_received_at` on every review.
 - ✅ The API client lives in `packages/core` — Phase 12 imports it unchanged.
-- ⚠️ Push: batch POST of new `reviews`. Pull: everything since the cursor. No
-  merge code — single-writer data cannot conflict. *Both endpoints and the client
-  transport exist. The loop that reads unsynced rows out of local SQLite and
-  applies pulled rows back into it does not.*
+- ✅ Push: batch POST of new `reviews`. Pull: everything since the cursor. No
+  merge code — single-writer data cannot conflict. *The loop is `hooks/useSync.ts`
+  over `lib/sync.ts`; it reads unsynced rows out of local SQLite and applies
+  pulled rows back into it.*
 - ⚠️ Deck and note content sync, per-field `updated_at`, last-write-wins.
   *Last-write-wins is **row-level**, not per-field: two offline edits to
   different fields of one note keep only the later note. Marked `ponytail:` in
   `SyncService::push`; per-field needs a `field_updated_at` map on both sides,
   and Phase 9's CRDT is the real answer for genuine co-editing.*
-- ◻︎ **Eager push of unsynced reviews at session end** — Safari evicts storage
-  after 7 idle days.
-- ◻︎ **Workbox service worker**, carried from Phase 1: app shell, media cache and
-  sync queue, decided together.
-- ◻︎ Server-side FSRS for dashboards and parameter optimisation.
-- ◻︎ **Move `.apkg` import to a queued job**, which is where PLAN.md §1 always put
+- ✅ **Eager push of unsynced reviews at session end** — Safari evicts storage
+  after 7 idle days. *`visibilitychange` in `useSync`.*
+- ✅ **Service worker**, carried from Phase 1: app shell and an immutable-asset
+  cache. *Hand-written, not Workbox, and `public/sw.js` argues the case: Vite
+  already content-hashes every asset, which is the guarantee a precache manifest
+  exists to provide. The media cache is deferred with the media transport it
+  would cache — see the note at the end of Phase 8.*
+- ◻︎ Server-side FSRS for dashboards and parameter optimisation. **Still open**,
+  and the only Phase 5 line that is. Nothing downstream blocks on it: the
+  dashboard computes from the local log, and optimisation is a Phase 10 concern.
+- ✅ **Move `.apkg` import to a queued job**, which is where PLAN.md §1 always put
   it and where Phase 4 could not. Decided after Phase 4 shipped: an import that
   lands in MySQL syncs to *every* device, where a client-side one only ever
   reaches the device that ran it. Upload → queue → unzip → zstd → read → write,
@@ -354,79 +360,138 @@ and signing out and back in never costs a card.
 
 ---
 
-## Phase 6 — Dashboard, global card browser & Pomodoro · ~1.5 weeks
+## Phase 6 — Dashboard, global card browser & Pomodoro · ~1.5 weeks · ✅
 
-- **Global card browser** — cross-deck, filters on state / flag / tag / due /
+- ✅ **Global card browser** — cross-deck, filters on state / flag / tag / due /
   lapses, and **bulk** suspend, flag, reschedule, retag, move. One of the two
   screens heavy Anki users live in, and it has to exist before the marketplace
   makes collections big.
-- **Hierarchical tag sidebar** (`anatomy::thorax::valves`) and the reserved tags
+- ✅ **Hierarchical tag sidebar** (`anatomy::thorax::valves`) and the reserved tags
   — `marked` as a per-note bookmark, `leech` written by the scheduler.
-- Dashboard names **weaknesses**: worst topics by lapse rate, leeches with the
+- ✅ Dashboard names **weaknesses**: worst topics by lapse rate, leeches with the
   reason, true vs. target retention, forecast load.
-- Streak, heatmap, time-of-day accuracy.
-- **Leech detection** and **sibling burying** — Anki hides a note's other cards
+- ✅ Streak, heatmap, time-of-day accuracy.
+- ✅ **Leech detection** and **sibling burying** — Anki hides a note's other cards
   once one is answered; the most-noticed missing behaviour on reversed decks.
-- **Audio autoplay** with a deck option, which needs the parent to own the audio
+  *Half-landed until Phase 8's audit: the `bury_new` / `bury_reviews` columns and
+  `siblingsToBury`'s options parameter both existed, but `burySiblings` never
+  read the columns and no screen ever wrote them — so burying was unconditional
+  and the deck option was a setting that did nothing. Wired, and the toggle now
+  sits beside desired retention on the deck screen.*
+- ✅ **Audio autoplay** with a deck option, which needs the parent to own the audio
   element, the same shape as the type-in box.
-- **Sound feedback on the study loop** — reveal, the four ratings, undo, session
+- ✅ **Sound feedback on the study loop** — reveal, the four ratings, undo, session
   complete. Off by default, synthesised with WebAudio rather than shipped as
   files, under 80 ms each, and played from the handler that does the reveal so
   it is not late. Same restraint budget as the motion rules; written up in
   [UI.md](UI.md) §3. Distinct from card `[sound:]` media above: that is content,
   this is confirmation that a rating registered while the eyes were on the card.
-- Pomodoro 25/5, offline, logged beside reviews so focus blocks can be correlated
+- ✅ Pomodoro 25/5, offline, logged beside reviews so focus blocks can be correlated
   with accuracy.
 
 **Done when:** it tells you something Anki's stats never did.
 
 ---
 
-## Phase 7 — Filtered decks (custom study) · ~1 week
+## Phase 7 — Filtered decks (custom study) · ~1 week · ✅
 
 Cram sessions before an exam — the most-asked-for Anki feature after the
 scheduler itself. This is the last comfortable moment: it touches `nextCard`,
 `deckTree` and `counts`, and doing that before the marketplace multiplies
 collection sizes is cheaper than after.
 
-- Cards move to a temporary deck and return: `cards.original_deck_id` +
+- ✅ Cards move to a temporary deck and return: `cards.original_deck_id` +
   `original_due`, restored on rebuild or empty.
-- Search-driven (`tag:exam is:due`), with a card limit and an order.
-- **Reschedule or not.** Not rescheduling is what makes it a cram, and it must
-  not write to the append-only log as if it were a real review — or it must,
-  flagged, and the dashboard filters it. **Decide before building.**
+- ✅ Search-driven (`tag:exam is:due`), with a card limit and an order.
+- ✅ **Reschedule or not.** *Decided the third way: with rescheduling off, the
+  answer writes **nothing** to the review log and the card goes straight home.
+  The log has no "this was a cram" column, and `replayReviews()` re-applies every
+  row it finds — so an unflagged row would quietly reschedule the card on the
+  next cache rebuild, and a flagged one cannot exist honestly until the column
+  does. The cost is that a cram is invisible to the dashboard, and the one-column
+  upgrade is marked `ponytail:` at the call site.*
 
 **Done when:** cram a tag, empty the deck, every card is back where it started
 with its schedule untouched.
 
 ---
 
-## Phase 8 — Public marketplace, cloning & moderation · ~3 weeks
+## Phase 8 — Public marketplace, cloning & moderation · ~3 weeks · ✅
 
 *(+1 wk — day-one moderation is a product surface, not a checkbox)*
 
-- Visibility private / unlisted / public. Publishing creates an **immutable
-  version** (semver + changelog), never a live pointer.
-- Clone stores `source_deck_id` + `at_version` ⇒ "update available", merging
+- ✅ Visibility private / unlisted / public. Publishing creates an **immutable
+  version** (semver + changelog), never a live pointer. *`listings` holds the
+  state, `listing_versions` holds the bytes; a publish always cuts a row.*
+- ✅ Clone stores `source_deck_id` + `at_version` ⇒ "update available", merging
   upstream without destroying local scheduling. This is what Phase 3's guids buy.
-- Browse, search, tags, preview-before-clone, ratings.
-- **Trust & safety, shipped with it, not after:**
-  - rights attestation at publish time, recorded with the version
-  - report button on every public deck and card
-  - moderation queue with hide / unlist / take down, and an audit trail
-  - counter-notice flow and a published contact
-  - rate limits on publishing; new accounts unlisted until first review
-- You are AU-based, so the safe-harbour regime is the Copyright Act 1968, while
-  most notices will arrive DMCA-shaped from US users. Support both intake paths.
-  **Get this reviewed by someone qualified before public launch — it is the one
-  item here that code cannot de-risk.**
+  *The merge is the install run again: notes are matched on a guid derived from
+  the published one, so cards and scheduling survive it. The offer now appears on
+  the **deck list**, not only on the listing page — `GET marketplace/updates`
+  answers for a whole collection in one request, and it is public, because a deck
+  cloned signed out is still a deck whose updates the person is owed.*
+- ✅ Browse, search, tags, preview-before-clone, ratings.
+  - *Preview renders a real card with the renderer that will render it after
+    cloning, and downloads **nothing**: the listing response carries five sample
+    notes and their note types, which is everything `paintCard` needs.*
+  - *Ratings are one to five stars, **only from accounts that cloned the deck**.
+    That rule is the reason the number is worth printing, and it is the cheapest
+    anti-brigading measure available: a downvote costs a clone. An unrated deck
+    says "not rated yet" rather than drawing an empty five-star row.*
+- ✅ **Trust & safety, shipped with it, not after:**
+  - ✅ rights attestation at publish time, recorded with the version *(and the
+    IP it was attested from)*
+  - ✅ report button on every public deck
+  - ✅ moderation queue with unlist / take down / approve / dismiss, and an
+    append-only audit trail in `listing_moderation_events` — publications,
+    removals, counter-notices and reinstatements in the order they happened.
+    *The three `moderated_*` columns on `listings` hold only the latest decision;
+    a reinstatement used to overwrite the takedown it reversed, which is exactly
+    the sequence a counter-notice is argued from.*
+  - ✅ counter-notice flow and a published contact. *The publisher's shelf at
+    `/explore/mine` is where a removal becomes visible — it is invisible
+    everywhere else by design — and the reply is the button beside it. `/legal`
+    is public and openable without an account, because the person who needs the
+    address usually does not have one.*
+  - ✅ rate limits on publishing (5/hr) and reporting (5/hr); new accounts stay
+    in `in_review` until a moderator approves their first deck — a status only a
+    moderator can move, not a visibility the publisher can flip.
+- ⚠️ You are AU-based, so the safe-harbour regime is the Copyright Act 1968, while
+  most notices will arrive DMCA-shaped from US users. Both intake paths are
+  accepted and `/legal` says so. **Still un-reviewed by anyone qualified, and the
+  page says that too. It remains the one item here that code cannot de-risk.**
 
 **Done when:** clone a public deck, upstream ships v2, you merge and keep history
-— and a reported deck is down in under a minute with a record of why.
+— and a reported deck is down in under a minute with a record of why. *Both hold:
+`BrowseTest`, `PublishTest`, `RatingTest` and `ModerationTest` are 33 tests over
+the first, and the second is one `POST .../takedown` that flips one column every
+distribution path already reads.*
+
+> **The one thing a published deck still cannot carry: its media.** Images and
+> audio live in a per-account store with no HTTP path — `mediaUp()` in the sync
+> client syncs the *metadata* and says so in a comment, because the bytes have no
+> endpoint on either side. So a published anatomy deck arrives without its
+> plates, and the app says so in three places rather than letting anyone find out
+> after cloning: on the publish screen, on the preview, and on the card.
+>
+> This is not a marketplace bug. It is Phase 5's deferred media transport, and it
+> blocks the medical vertical the whole plan is aimed at, so it is scheduled
+> rather than noted: **`POST /media/{sha256}` + `GET /media/{sha256}` for an
+> account's own bytes, a sha256 manifest inside each published version, and
+> `GET /marketplace/listings/{listing}/versions/{v}/media/{sha}` scoped to that
+> version.** Content-addressed, so the service worker caches it with one line
+> (`public/sw.js` already reserves the spot). Roughly half a week, and it should
+> come before Phase 9 rather than after — Phase 9 adds a second writer to decks
+> whose images still do not travel.
 
 ---
 
-## Phase 9 — Live collaboration (full co-editing) · ~2 weeks
+## Phase 9 — Live collaboration (full co-editing) · ~2 weeks · **← next**
+
+> Preceded by the ~0.5 wk media transport scheduled at the end of Phase 8. Adding
+> a second writer to a deck whose images still cannot travel is building on the
+> gap rather than closing it.
+
 
 - Y.Doc per deck; notes as `Y.Map`, rich fields as `Y.Text`.
 - Transport **Laravel Reverb**. Laravel stores updates as **opaque binary blobs**

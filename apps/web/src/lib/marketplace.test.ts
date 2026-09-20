@@ -8,7 +8,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ApiError } from '@recall/core'
 import {
-  cloneGuid, formatBytes, getListing, listListings, reportListing, toNoteType, updateAvailable,
+  cloneGuid, formatBytes, getListing, listListings, listingUpdates, rateListing,
+  reportListing, toNoteType, updateAvailable,
 } from './marketplace.ts'
 
 interface Call { url: string; init: RequestInit }
@@ -51,11 +52,66 @@ test('empty filters are left off the query rather than sent blank', async () => 
   assert.ok(!calls[0]!.url.includes('?'), calls[0]!.url)
 })
 
-test('the preview rides beside `data`, not inside it', async () => {
-  stubFetch([envelope({ id: 'l1', title: 'Heart' }, { preview: [{ source_guid: 'g' }] })])
-  const { listing, preview } = await getListing('l1')
+test('the preview rides beside `data` and carries the note types a card needs', async () => {
+  stubFetch([
+    envelope(
+      { id: 'l1', title: 'Heart' },
+      {
+        preview: { notes: [{ source_guid: 'g' }], note_types: [{ id: 'nt-1' }] },
+        your_rating: 3,
+      },
+    ),
+  ])
+  const { listing, preview, yourRating } = await getListing('l1')
   assert.equal(listing.title, 'Heart')
-  assert.equal(preview.length, 1)
+  assert.equal(preview.notes.length, 1)
+  // Without these the listing page would download the whole version to draw a
+  // sample card for somebody who has not decided to clone anything.
+  assert.equal(preview.note_types.length, 1)
+  assert.equal(yourRating, 3)
+})
+
+test('a listing published before previews existed reads as empty, not as a crash', async () => {
+  stubFetch([envelope({ id: 'l1', title: 'Heart' })])
+  const { preview, yourRating } = await getListing('l1')
+  assert.deepEqual(preview, { notes: [], note_types: [] })
+  assert.equal(yourRating, 0)
+})
+
+test('the update check asks once for the whole collection', async () => {
+  const calls = stubFetch([
+    envelope([
+      { id: 'l1', title: 'Heart', latest_version: 4 },
+      { id: 'l2', title: 'Lungs', latest_version: 1 },
+    ]),
+  ])
+  const latest = await listingUpdates(['l1', 'l2'])
+
+  assert.equal(calls.length, 1)
+  assert.match(calls[0]!.url, /marketplace\/updates\?ids=l1%2Cl2$/)
+  assert.equal(latest.get('l1'), 4)
+  assert.equal(latest.get('l2'), 1)
+})
+
+test('no cloned decks means no request at all', async () => {
+  const calls = stubFetch([])
+  assert.equal((await listingUpdates([])).size, 0)
+  assert.equal(calls.length, 0)
+})
+
+test('rating is a PUT carrying the stars, and its refusal survives as an ApiError', async () => {
+  const calls = stubFetch([envelope({ rating_count: 2, rating_sum: 9, your_rating: 5 })])
+  const summary = await rateListing('l1', 5)
+
+  assert.equal(calls[0]!.init.method, 'PUT')
+  assert.equal(JSON.parse(String(calls[0]!.init.body)).stars, 5)
+  assert.equal(summary.your_rating, 5)
+
+  // The 403 is the "clone it first" rule, and its message is the instruction.
+  stubFetch([{ status: 403, body: { error: { code: 'forbidden', message: 'Add this deck first.' } } }])
+  const error = await rateListing('l1', 5).catch((e: unknown) => e)
+  assert.ok(error instanceof ApiError)
+  assert.equal(error.message, 'Add this deck first.')
 })
 
 test('a 403 becomes a forbidden ApiError, which is how moderation shows "not found"', async () => {

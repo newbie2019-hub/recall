@@ -8,6 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { CardPreview } from '@/components/marketplace/CardPreview'
 import { CloneButton } from '@/components/marketplace/CloneButton'
 import { ReportDialog } from '@/components/marketplace/ReportDialog'
+import { RatePicker, Stars } from '@/components/marketplace/Stars'
+import { useAuth } from '@/lib/auth'
 import { ago, formatBytes, getListing, RIGHTS, type ListingPage as ListingData } from '@/lib/marketplace'
 import { NotFoundPage } from './NotFoundPage'
 import { paths } from './paths'
@@ -22,6 +24,7 @@ import { paths } from './paths'
  */
 export function ListingPage() {
   const { listingId } = useParams()
+  const { user } = useAuth()
   const [data, setData] = useState<ListingData | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
@@ -72,7 +75,7 @@ export function ListingPage() {
     )
   }
 
-  const { listing, preview } = data
+  const { listing, preview, yourRating } = data
   const versions = listing.versions ?? []
   const latest = versions.find((v) => v.version === listing.latest_version)
 
@@ -95,11 +98,38 @@ export function ListingPage() {
         {latest && <Stat label="notes" value={latest.note_count.toLocaleString()} />}
         {latest && <Stat label="download" value={formatBytes(latest.size_bytes)} />}
         <Stat label="cloned" value={listing.install_count.toLocaleString()} />
+        <div className="flex items-baseline gap-2">
+          <dt className="text-muted-foreground">rated</dt>
+          <dd>
+            <Stars average={listing.rating_average} count={listing.rating_count} />
+          </dd>
+        </div>
       </dl>
 
       <div className="mb-8">
         <CloneButton listing={listing} />
       </div>
+
+      {/* Only where a rating can actually be left. The server refuses one from
+          anybody who has not cloned the deck, and a control that exists to
+          refuse is worse than no control. */}
+      {user && (
+        <div className="mb-8">
+          <RatePicker
+            listing={listing}
+            yours={yourRating}
+            onRated={({ average, count, yours }) =>
+              setData((d) =>
+                d && {
+                  ...d,
+                  listing: { ...d.listing, rating_average: average, rating_count: count },
+                  yourRating: yours,
+                },
+              )
+            }
+          />
+        </div>
+      )}
 
       {listing.tags.length > 0 && (
         <div className="mb-8 flex flex-wrap gap-1">
@@ -151,6 +181,10 @@ export function ListingPage() {
             a claim nobody can see is a claim nobody can check (PHASES §8). */}
         <p className="max-w-md text-xs text-muted-foreground">
           {latest ? RIGHTS[latest.rights_attestation] ?? 'Rights not stated' : 'Rights not stated'}
+          {' · '}
+          <Link to={paths.legal} className="underline hover:text-hematoxylin">
+            Rights &amp; takedowns
+          </Link>
         </p>
         <ReportDialog listingId={listing.id} />
       </footer>

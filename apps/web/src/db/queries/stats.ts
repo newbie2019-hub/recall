@@ -457,16 +457,36 @@ export async function burySiblings(
   noteId: string,
   now = Date.now(),
 ): Promise<string[]> {
+  // The deck's own switches ride along with the cards. `siblingsToBury` has
+  // taken them since it was written, and reading them here is what stops the
+  // two columns on `decks` from being a setting that silently does nothing —
+  // every card of one note shares a deck unless a template override moves it,
+  // and the answered card's deck is the one whose rule applies.
   const cards = await db.select<{
     id: string; state: CardStateName; suspended: number; buried_until: number | null
-  }>('SELECT id, state, suspended, buried_until FROM cards WHERE note_id = ?', [noteId])
+    bury_new: number; bury_reviews: number
+  }>(
+    `SELECT c.id, c.state, c.suspended, c.buried_until, d.bury_new, d.bury_reviews
+       FROM cards c
+       JOIN notes n ON n.id = c.note_id
+       LEFT JOIN decks d ON d.id = ${DECK_OF}
+      WHERE c.note_id = ?`,
+    [noteId],
+  )
   if (cards.length < 2) return []
 
+  const answered = cards.find((c) => c.id === cardId)
   const until = nextDayStart(now)
   const ids = siblingsToBury(
     cardId,
     cards.map((c) => ({ ...c, suspended: !!c.suspended })),
     until,
+    // A missing row means a card whose deck has gone; the defaults are Anki's
+    // and are what every deck gets until somebody turns one off.
+    {
+      newCards: (answered?.bury_new ?? 1) !== 0,
+      reviews: (answered?.bury_reviews ?? 1) !== 0,
+    },
   )
   if (!ids.length) return []
 

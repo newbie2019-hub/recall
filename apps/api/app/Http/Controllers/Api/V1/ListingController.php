@@ -17,8 +17,10 @@ use App\Models\Listing;
 use App\Policies\ListingPolicy;
 use App\Services\Marketplace\ModerationService;
 use App\Services\Marketplace\PublishService;
+use App\Services\Marketplace\RatingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * The marketplace as everybody except a moderator sees it: browse, preview,
@@ -36,10 +38,14 @@ class ListingController extends Controller
     /** How many notes a preview shows before somebody has to clone the deck. */
     private const PREVIEW_NOTES = 5;
 
+    /** How many decks one client may ask about in a single update check. */
+    private const MAX_UPDATE_IDS = 100;
+
     public function __construct(
         private readonly ListingRepository $listings,
         private readonly PublishService $publish,
         private readonly ModerationService $moderation,
+        private readonly RatingService $ratings,
     ) {}
 
     /**
@@ -93,8 +99,68 @@ class ListingController extends Controller
 
         // The preview rides beside `data`, not inside the resource: `additional()`
         // is only applied when a resource is the response root, and this one is
-        // nested in the standard envelope.
-        return $this->ok(new ListingResource($listing), ['preview' => $this->preview($listing)]);
+        // nested in the standard envelope. `your_rating` travels the same way
+        // rather than as a field on the listing, because it is a fact about the
+        // viewer and the listing is cached per deck, not per person.
+        return $this->ok(new ListingResource($listing), [
+            'preview' => $this->preview($listing),
+            'your_rating' => $this->ratings->ratingBy($viewer, $listing),
+        ]);
+    }
+
+    /**
+     * "Which of these decks has a newer version?" — asked once for a whole
+     * collection, not once per cloned deck.
+     *
+     * The client holds `source_listing_id` and `source_version` on every cloned
+     * deck and compares locally; all it needs from here is the current version
+     * of each listing it names. Unauthenticated, because cloning works signed
+     * out (PHASES §8) and so must the offer to update.
+     *
+     * `distributable()` rather than `browsable()`: an unlisted deck somebody
+     * cloned by link still gets its updates, and a taken-down one simply drops
+     * out of the answer — which the client reads as "no update", never as an
+     * error about a deck it is still perfectly entitled to keep studying.
+     */
+    public function updates(Request $request): JsonResponse
+    {
+        $ids = collect(explode(',', $request->string('ids')->toString()))
+            ->map(fn (string $id): string => trim($id))
+            ->filter(fn (string $id): bool => Str::isUuid($id))
+            ->unique()
+            ->take(self::MAX_UPDATE_IDS)
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return $this->ok([]);
+        }
+
+        return $this->ok(
+            $this->listings->distributableByIds($ids->all())
+                ->map(fn (Listing $listing): array => [
+                    'id' => $listing->id,
+                    'title' => $listing->title,
+                    'latest_version' => (int) $listing->latest_version,
+                ])
+                ->values()
+                ->all(),
+        );
+    }
+
+    /**
+     * Rate a deck you cloned, or change the rating you left.
+     *
+     * The install requirement lives in {@see RatingService}, not here: it is the
+     * rule that makes the number mean anything, and a controller is where rules
+     * go to be forgotten by the next endpoint that needs one.
+     */
+    public function rate(Request $request, Listing $listing): JsonResponse
+    {
+        $validated = $request->validate([
+            'stars' => ['required', 'integer', 'min:1', 'max:5'],
+        ]);
+
+        return $this->ok($this->ratings->rate($request->user(), $listing, (int) $validated['stars']));
     }
 
     /**

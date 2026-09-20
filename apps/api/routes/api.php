@@ -90,6 +90,13 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('throttle:5,60')
         ->name('marketplace.listings.report');
 
+    // Rating is a write, so it needs an account; the service additionally
+    // requires an install, because a rating from somebody who never took the
+    // deck is a number about its description.
+    Route::put('marketplace/listings/{listing}/rating', [ListingController::class, 'rate'])
+        ->middleware('throttle:30,1')
+        ->name('marketplace.listings.rate');
+
     Route::middleware('can:moderate,'.Listing::class)->group(function (): void {
         Route::get('moderation/reports', [ModerationController::class, 'index'])
             ->name('moderation.reports.index');
@@ -99,6 +106,14 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
         Route::post('moderation/listings/{listing}/takedown', [ModerationController::class, 'takedown'])
             ->name('moderation.listings.takedown');
+
+        // The softer half of the pair. A queue with only a takedown button is a
+        // queue where every judgement call becomes a takedown.
+        Route::post('moderation/listings/{listing}/unlist', [ModerationController::class, 'unlist'])
+            ->name('moderation.listings.unlist');
+
+        Route::get('moderation/listings/{listing}/history', [ModerationController::class, 'history'])
+            ->name('moderation.listings.history');
 
         Route::post('moderation/listings/{listing}/approve', [ModerationController::class, 'approve'])
             ->name('moderation.listings.approve');
@@ -115,6 +130,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
 Route::middleware('throttle:60,1')->group(function (): void {
     Route::get('marketplace/listings', [ListingController::class, 'index'])
         ->name('marketplace.listings.index');
+
+    // Public for the same reason the download is: a deck cloned signed out is
+    // still a deck whose updates the person is entitled to be offered.
+    Route::get('marketplace/updates', [ListingController::class, 'updates'])
+        ->name('marketplace.updates');
 
     Route::get('marketplace/listings/{listing}', [ListingController::class, 'show'])
         ->name('marketplace.listings.show');

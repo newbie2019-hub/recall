@@ -188,6 +188,77 @@ class ModerationTest extends MarketplaceTestCase
         ]);
     }
 
+    public function test_unlisting_takes_a_deck_out_of_browse_without_breaking_its_link(): void
+    {
+        $publisher = $this->account();
+        $listing = $this->publishedListing($publisher, $this->deckWithNotes($publisher));
+
+        $this->actingAsToken($this->tokenFor($this->account(moderator: true)))
+            ->postJson(route('moderation.listings.unlist', $listing), ['reason' => 'Miscategorised.'])
+            ->assertOk()
+            ->assertJsonPath('data.visibility', Listing::VISIBILITY_UNLISTED)
+            // Still published — that is the entire difference from a takedown.
+            ->assertJsonPath('data.status', Listing::STATUS_PUBLISHED);
+
+        $this->anonymous()->getJson(route('marketplace.listings.index'))->assertJsonCount(0, 'data');
+        $this->anonymous()->getJson(route('marketplace.listings.show', $listing))->assertOk();
+        $this->anonymous()->getJson(route('marketplace.listings.version', [$listing, 1]))->assertOk();
+    }
+
+    public function test_the_trail_keeps_every_decision_in_order_including_the_one_that_was_reversed(): void
+    {
+        $publisher = $this->account();
+        $listing = $this->publishedListing($publisher, $this->deckWithNotes($publisher));
+        $moderator = $this->account(moderator: true);
+
+        $this->actingAsToken($this->tokenFor($moderator))
+            ->postJson(route('moderation.listings.takedown', $listing), ['reason' => 'Reported as scans.'])
+            ->assertOk();
+
+        $this->actingAsToken($this->tokenFor($publisher))
+            ->postJson(route('marketplace.listings.report', $listing), [
+                'kind' => ListingReport::KIND_COUNTER_NOTICE,
+                'reason' => 'copyright',
+                'detail' => 'They are my own drawings.',
+            ])
+            ->assertCreated();
+
+        $this->actingAsToken($this->tokenFor($moderator))
+            ->postJson(route('moderation.listings.approve', $listing), ['note' => 'Counter-notice accepted.'])
+            ->assertOk();
+
+        // The listing's own columns hold only the last decision. The trail is
+        // what still knows the deck was ever down, and why — which is the one
+        // question a counter-notice is argued from.
+        $this->assertSame('Counter-notice accepted.', $listing->refresh()->moderation_reason);
+
+        $history = $this->actingAsToken($this->tokenFor($moderator))
+            ->getJson(route('moderation.listings.history', $listing))
+            ->assertOk()
+            ->json('data');
+
+        // Newest first, and the first two entries are the publication itself and
+        // the approval a first-time publisher waits for.
+        $this->assertSame(
+            ['approve', 'counter_notice', 'takedown', 'approve', 'publish'],
+            array_column($history, 'action'),
+        );
+        $this->assertSame('Reported as scans.', $history[2]['reason']);
+        $this->assertSame($moderator->id, $history[2]['moderator']['id']);
+        // A publisher's counter-notice is their act, not a moderator's.
+        $this->assertNull($history[1]['moderator']);
+    }
+
+    public function test_the_trail_is_moderators_only(): void
+    {
+        $publisher = $this->account();
+        $listing = $this->publishedListing($publisher, $this->deckWithNotes($publisher));
+
+        $this->actingAsToken($this->tokenFor($publisher))
+            ->getJson(route('moderation.listings.history', $listing))
+            ->assertForbidden();
+    }
+
     public function test_installing_a_removed_deck_is_refused(): void
     {
         $publisher = $this->account();

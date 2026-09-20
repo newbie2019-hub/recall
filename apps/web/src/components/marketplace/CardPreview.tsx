@@ -5,10 +5,7 @@ import { CardFrame } from '@/components/CardFrame'
 import { SpecimenTag } from '@/components/SpecimenTag'
 import { Skeleton } from '@/components/ui/skeleton'
 import { paintCard } from '@/lib/render'
-import {
-  formatBytes, getVersion, toNoteType,
-  type Listing, type PayloadNote, type VersionPayload,
-} from '@/lib/marketplace'
+import { toNoteType, type Listing, type Preview } from '@/lib/marketplace'
 
 /**
  * A real sample, rendered by the renderer that will render it after cloning —
@@ -21,80 +18,21 @@ import {
  * sandbox is `allow-same-origin` and nothing else — no `allow-scripts`, ever
  * (README rule 5). Nothing on this page may use `dangerouslySetInnerHTML`.
  *
- * The listing response carries sample notes but no note types, and a card
- * cannot be rendered without its templates, so the preview downloads the
- * version — memoised, so the clone that usually follows is already here. Over a
- * few megabytes that is a real cost, so it waits to be asked.
+ * It downloads nothing. The listing response carries the sample notes *and*
+ * their note types, which is everything a card needs; fetching the version here
+ * would mean anybody who opened a shared link pulled megabytes before deciding
+ * whether they wanted the deck at all.
  */
-const AUTO_LOAD_BYTES = 2_000_000
 const HAS_MEDIA = /media\/[0-9a-f]{64}|\[sound:/
 
-export function CardPreview({ listing, preview }: { listing: Listing; preview: PayloadNote[] }) {
-  const latest = listing.versions?.find((v) => v.version === listing.latest_version)
-  const [payload, setPayload] = useState<VersionPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [asked, setAsked] = useState((latest?.size_bytes ?? 0) <= AUTO_LOAD_BYTES)
-
-  useEffect(() => {
-    if (!asked) return
-    let cancelled = false
-    void getVersion(listing.id, listing.latest_version)
-      .then((v) => !cancelled && setPayload(v.payload))
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [asked, listing.id, listing.latest_version])
-
-  const notes = payload?.notes.slice(0, 5) ?? preview
-
-  if (!notes.length) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        This deck was published without a preview. You can still clone it, but you
-        will be looking at the cards for the first time afterwards.
-      </p>
-    )
-  }
-
-  if (!asked) {
-    return (
-      <div className="space-y-2">
-        <Button variant="outline" onClick={() => setAsked(true)}>
-          Show sample cards
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Rendering a card needs its templates, which means fetching the deck —
-          {latest ? ` ${formatBytes(latest.size_bytes)}` : ''}. Cloning afterwards
-          does not download it twice.
-        </p>
-      </div>
-    )
-  }
-
-  if (error) return <p className="font-mono text-xs text-eosin">{error}</p>
-  if (!payload) return <Skeleton className="h-64 w-full" />
-
-  return <Deck listing={listing} payload={payload} notes={notes} />
-}
-
-function Deck({
-  listing,
-  payload,
-  notes,
-}: {
-  listing: Listing
-  payload: VersionPayload
-  notes: PayloadNote[]
-}) {
+export function CardPreview({ listing, preview }: { listing: Listing; preview: Preview }) {
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [painted, setPainted] = useState<{ front: string; back: string } | null>(null)
 
-  const note = notes[index % notes.length]
-  const published = note ? payload.note_types.find((t) => t.id === note.note_type_id) : undefined
+  const notes = preview.notes
+  const note = notes.length ? notes[index % notes.length] : undefined
+  const published = note ? preview.note_types.find((t) => t.id === note.note_type_id) : undefined
   const noteType = published ? toNoteType(published, listing.id) : null
 
   useEffect(() => {
@@ -112,7 +50,18 @@ function Deck({
     return () => {
       cancelled = true
     }
-  }, [note, noteType])
+    // Keyed on the note alone: `noteType` is rebuilt from `published` on every
+    // render, so depending on it would repaint forever.
+  }, [note])
+
+  if (!notes.length) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        This deck was published without a preview. You can still clone it, but you
+        will be looking at the cards for the first time afterwards.
+      </p>
+    )
+  }
 
   const step = (by: number) => {
     setIndex((i) => (i + by + notes.length) % notes.length)

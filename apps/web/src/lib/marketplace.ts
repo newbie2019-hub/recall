@@ -58,18 +58,28 @@ export interface Listing {
   tags: string[]
   visibility: Visibility
   latest_version: number
-  /** Real, and the only number on a tile: nobody has rated anything in this phase. */
+  /** Real: it counts decks that were actually cloned, once each. */
   install_count: number
+  /**
+   * Null until somebody rates it — *not* zero. Only people who cloned the deck
+   * can rate it, so this is an average over people who studied the cards.
+   */
+  rating_average: number | null
+  rating_count: number
   published_at: string | null
   publisher?: Publisher
   /** Loaded on the detail and publish responses, absent while browsing. */
   versions?: ListingVersion[]
+  /** On a browse tile, taken from the latest version. Absent on the detail page,
+   *  which has `versions` and reads them from there. */
+  note_count?: number
+  size_bytes?: number
   // Publisher- and moderator-only. Absent for everyone else, which is why every
   // one of them is optional rather than nullable.
   /**
-   * Which local deck this listing was published from. **Not returned yet** — see
-   * the report. Without it the publish screen cannot say "this will be v2", so
-   * it degrades to not saying it; publishing is idempotent per deck either way.
+   * Which local deck this listing was published from — publisher and moderator
+   * only, since it is an id into somebody's collection. It is what lets the
+   * publish screen say "this will be v2" instead of asking every time.
    */
   deck_id?: string
   status?: ListingStatus
@@ -119,10 +129,24 @@ export interface VersionPayload {
 
 export type VersionDownload = ListingVersion & { payload: VersionPayload }
 
+/**
+ * Enough of the latest version to draw a card with, and no more.
+ *
+ * The note types travel with the sample notes deliberately: a card cannot be
+ * rendered without its templates, and without them this screen would have to
+ * download the whole version — megabytes — to show three sample cards to
+ * somebody who has not decided to clone anything yet.
+ */
+export interface Preview {
+  notes: PayloadNote[]
+  note_types: PayloadNoteType[]
+}
+
 export interface ListingPage {
   listing: Listing
-  /** A few notes off the front of the latest version. No note types with them. */
-  preview: PayloadNote[]
+  preview: Preview
+  /** What the signed-in viewer gave it, or 0 for "has not rated". */
+  yourRating: number
 }
 
 export const RIGHTS = {
@@ -249,11 +273,54 @@ export const myListings = () => call<Listing[]>('marketplace/my-listings')
 
 export async function getListing(id: string): Promise<ListingPage> {
   const envelope = await envelopeOf<Listing>(`marketplace/listings/${encodeURIComponent(id)}`)
-  // `preview` rides beside `data` rather than inside it, so it is read off the
-  // envelope. A listing published before previews existed simply has none.
-  const preview = (envelope as { preview?: PayloadNote[] }).preview ?? []
-  return { listing: envelope.data, preview }
+  // `preview` and `your_rating` ride beside `data` rather than inside it, so
+  // they are read off the envelope: the listing is the same for everybody and
+  // the rating is a fact about the viewer. A listing published before previews
+  // existed simply has none.
+  const extra = envelope as { preview?: Partial<Preview>; your_rating?: number }
+  return {
+    listing: envelope.data,
+    preview: {
+      notes: extra.preview?.notes ?? [],
+      note_types: extra.preview?.note_types ?? [],
+    },
+    yourRating: extra.your_rating ?? 0,
+  }
 }
+
+/**
+ * Which of these listings has a newer version — one request for a whole
+ * collection, not one per cloned deck.
+ *
+ * Unauthenticated, like browse and download: a deck cloned signed out is still
+ * a deck whose updates the person is entitled to be offered. A listing that has
+ * been taken down is simply absent from the answer, which reads as "no update"
+ * rather than as an error about a deck that is theirs now regardless.
+ */
+export async function listingUpdates(ids: string[]): Promise<Map<string, number>> {
+  if (!ids.length) return new Map()
+  const rows = await call<{ id: string; title: string; latest_version: number }[]>(
+    'marketplace/updates',
+    { query: { ids: ids.join(',') } },
+  )
+  return new Map(rows.map((r) => [r.id, r.latest_version]))
+}
+
+export interface RatingSummary {
+  rating_count: number
+  rating_sum: number
+  your_rating: number
+}
+
+/**
+ * Rate a deck you cloned. The server refuses it from anybody who did not —
+ * which is the whole reason the number is worth printing.
+ */
+export const rateListing = (id: string, stars: number) =>
+  call<RatingSummary>(`marketplace/listings/${encodeURIComponent(id)}/rating`, {
+    method: 'PUT',
+    json: { stars },
+  })
 
 // ── the version, and why it is fetched whole ──────────────────────────────
 
@@ -345,6 +412,19 @@ export const dismissReport = (reportId: string, note: string) =>
     `moderation/reports/${encodeURIComponent(reportId)}/dismiss`,
     { method: 'POST', json: { note } },
   )
+
+/**
+ * Out of the catalogue, still reachable by its link — the middle setting.
+ *
+ * It exists so that "miscategorised" and "copyright infringement" are not the
+ * same button. A queue whose only control is a takedown is a queue where every
+ * judgement call becomes one.
+ */
+export const unlistListing = (listingId: string, reason: string) =>
+  call<Listing>(`moderation/listings/${encodeURIComponent(listingId)}/unlist`, {
+    method: 'POST',
+    json: { reason },
+  })
 
 /** Stops distribution. Reaches no collection, including the publisher's own. */
 export const takedownListing = (listingId: string, reason: string) =>

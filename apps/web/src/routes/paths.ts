@@ -35,7 +35,11 @@ export const paths = {
   marketplace: '/explore',
   listing: (id: string) => `/explore/${id}`,
   publishDeck: (deckId: string) => `/decks/${deckId}/publish`,
+  myListings: '/explore/mine',
   moderation: '/moderation',
+  // The published contact a takedown notice is sent to. Public, and reachable
+  // without an account, because the person who needs it is usually not a user.
+  legal: '/legal',
 } as const
 
 /**
@@ -49,5 +53,5 @@ export const paths = {
  * guard, stop — the guard is the bug.
  */
 export const PUBLIC_PATHS = [
-  paths.signIn, paths.signUp, paths.forgotPassword, paths.marketplace,
+  paths.signIn, paths.signUp, paths.forgotPassword, paths.marketplace, paths.legal,
 ] as const

@@ -36,6 +36,23 @@ export async function cloneOf(listingId: string): Promise<ClonedDeck | null> {
   return rows[0] ?? null
 }
 
+/**
+ * Every deck in this collection that came from a listing.
+ *
+ * One query for the whole deck list, answered against the local table: the
+ * server is then asked once for those listings' current versions, rather than
+ * once per deck. Decks cloned before versions were recorded have a null
+ * `source_version` and are deliberately included — the caller decides what to
+ * do with them, and `updateAvailable` declines to offer anything.
+ */
+export const clonedDecks = () =>
+  db.select<ClonedDeck>(
+    `SELECT id, name, source_listing_id, source_version
+       FROM decks
+      WHERE source_listing_id IS NOT NULL
+      ORDER BY rowid`,
+  )
+
 export const markClone = (deckId: string, listingId: string, version: number) =>
   db.run('UPDATE decks SET source_listing_id = ?, source_version = ? WHERE id = ?', [
     listingId,

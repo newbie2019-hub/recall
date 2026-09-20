@@ -1,22 +1,27 @@
 import { Link } from 'react-router'
 import { Badge } from '@/components/ui/badge'
+import { Stars } from '@/components/marketplace/Stars'
 import { ago, formatBytes, type Listing } from '@/lib/marketplace'
 import { paths } from '@/routes/paths'
 
 /**
  * One deck in the grid, as a specimen tag (UI.md §2).
  *
- * `install_count` is the only number here that could be mistaken for social
- * proof, and it is real: it counts decks that were actually cloned, once each.
- * There are no ratings in this phase and no stars are drawn — a "★ 4.8" with
- * nothing behind it is worse than no number at all.
+ * Every number on it is real. `install_count` counts decks that were actually
+ * cloned, once each, and the stars are an average over people who cloned the
+ * deck — nobody else can leave one. An unrated deck says so rather than showing
+ * an empty row of stars, which reads as zero.
  *
- * Size and card count come from the latest version, which browse does not load.
- * The tile shows them when it has them rather than guessing — see the report;
- * the fix is server-side and small.
+ * Size and card count come from the latest version, which browse loads as two
+ * columns beside the listing rather than as the whole version — twenty tiles
+ * would otherwise carry twenty decks.
  */
 export function ListingCard({ listing }: { listing: Listing }) {
+  // Browse sends these beside the listing; the detail page has `versions` and
+  // reads the same two numbers from there.
   const latest = listing.versions?.find((v) => v.version === listing.latest_version)
+  const noteCount = latest?.note_count ?? listing.note_count
+  const sizeBytes = latest?.size_bytes ?? listing.size_bytes
 
   return (
     <Link
@@ -35,18 +40,18 @@ export function ListingCard({ listing }: { listing: Listing }) {
       )}
 
       <dl className="mt-auto flex flex-wrap gap-x-4 gap-y-1 font-mono text-[0.6875rem] text-muted-foreground">
-        {latest && (
-          <>
-            <div className="flex gap-1">
-              <dt className="sr-only">notes</dt>
-              <dd className="text-foreground">{latest.note_count.toLocaleString()}</dd>
-              <span>notes</span>
-            </div>
-            <div className="flex gap-1">
-              <dt className="sr-only">download size</dt>
-              <dd>{formatBytes(latest.size_bytes)}</dd>
-            </div>
-          </>
+        {noteCount !== undefined && (
+          <div className="flex gap-1">
+            <dt className="sr-only">notes</dt>
+            <dd className="text-foreground">{noteCount.toLocaleString()}</dd>
+            <span>notes</span>
+          </div>
+        )}
+        {sizeBytes !== undefined && (
+          <div className="flex gap-1">
+            <dt className="sr-only">download size</dt>
+            <dd>{formatBytes(sizeBytes)}</dd>
+          </div>
         )}
         {listing.install_count > 0 && (
           <div className="flex gap-1">
@@ -65,6 +70,8 @@ export function ListingCard({ listing }: { listing: Listing }) {
           ))}
         </div>
       )}
+
+      <Stars average={listing.rating_average} count={listing.rating_count} />
 
       <p className="font-sans text-[0.625rem] tracking-[0.18em] text-muted-foreground uppercase">
         {listing.publisher?.name ?? 'Unknown'} · {ago(listing.published_at)}

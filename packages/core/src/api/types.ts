@@ -38,7 +38,17 @@ export interface ApiErrorBody {
 }
 
 export interface Session {
-  user: { id: string; name: string; email: string; email_verified: boolean }
+  user: {
+    id: string
+    name: string
+    email: string
+    email_verified: boolean
+    /**
+     * Whether to *draw* the moderation queue in the app chrome, never whether
+     * the call is allowed — that is the server's policy and stays there.
+     */
+    is_moderator: boolean
+  }
   device: DeviceSummary
   token: string
   expires_at: string | null

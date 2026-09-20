@@ -9,13 +9,14 @@ use App\Http\Controllers\Concerns\RespondsWithApi;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ListingResource;
 use App\Models\Listing;
+use App\Models\ListingModerationEvent;
 use App\Models\ListingReport;
 use App\Services\Marketplace\ModerationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * The queue, and the two decisions that come out of it.
+ * The queue, the decisions that come out of it, and the trail they leave.
  *
  * The whole controller is behind `can:moderate` in routes/api.php rather than a
  * check per method: one route group is a thing you can read and confirm, four
@@ -73,6 +74,42 @@ class ModerationController extends Controller
         return $this->ok(new ListingResource(
             $this->moderation->takedown($request->user(), $listing, $validated['reason']),
         ));
+    }
+
+    /**
+     * Out of the catalogue, still reachable by link. The middle setting.
+     */
+    public function unlist(Request $request, Listing $listing): JsonResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return $this->ok(new ListingResource(
+            $this->moderation->unlist($request->user(), $listing, $validated['reason']),
+        ));
+    }
+
+    /**
+     * Everything that has ever been decided about one listing, newest first.
+     *
+     * Moderator-only: the trail names the moderator who acted and quotes the
+     * reasons, and a reason written for the record is not written for the
+     * publisher's deck page.
+     */
+    public function history(Listing $listing): JsonResponse
+    {
+        return $this->ok(
+            $listing->moderationEvents()->with('moderator:id,name')->limit(100)->get()
+                ->map(fn (ListingModerationEvent $event): array => [
+                    'id' => $event->id,
+                    'action' => $event->action,
+                    'resulting_status' => $event->resulting_status,
+                    'reason' => $event->reason,
+                    'moderator' => $event->moderator?->only(['id', 'name']),
+                    'created_at' => $event->created_at?->toIso8601String(),
+                ])->all(),
+        );
     }
 
     /** Approve a first-time publisher, or reinstate after a counter-notice. */
