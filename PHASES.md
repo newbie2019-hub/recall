@@ -561,7 +561,14 @@ that decide who may write at all.*
 
 ---
 
-## Phase 10 — AI card generation & summaries · ~2.5 weeks
+## Phase 10 — AI card generation & summaries · ~3 weeks
+
+> **Rescoped in [AI.md](AI.md).** Three changes the research forced: the meter
+> ships *first*, with the cheapest feature, so nothing after it is untracked; a
+> **grader** sits between generation and the approval screen, because the best
+> model measured reaches 64.3% usable cards and the unusable ones look fine; and
+> the generative-UI registry is one component until a second is asked for by
+> name. The sketch below is what AI.md replaces.
 
 - Upload PDF / image / text → queued job → extract (PDF text layer, OCR
   fallback) → chunk → candidate cards.

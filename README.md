@@ -4,8 +4,8 @@ Offline-first spaced repetition. Web app now (React + TS + Tailwind v4 +
 shadcn/ui), React Native later off the same `packages/core`.
 
 Planning docs: [PLAN.md](PLAN.md) · [PHASES.md](PHASES.md) · [UI.md](UI.md) ·
-[CARDS.md](CARDS.md) · [CRITIQUE.md](CRITIQUE.md) · [ASSETS-3D.md](ASSETS-3D.md) ·
-[SIMULATION.md](SIMULATION.md)
+[CARDS.md](CARDS.md) · [CRITIQUE.md](CRITIQUE.md) · [AI.md](AI.md) ·
+[ASSETS-3D.md](ASSETS-3D.md) · [SIMULATION.md](SIMULATION.md)
 
 ## Run it
 
