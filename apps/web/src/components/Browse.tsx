@@ -49,6 +49,7 @@ export function Browse({
     retention: String(deck.retention_target),
     newPerDay: String(deck.new_per_day),
     bury: deck.bury_new !== 0,
+    maxAnswer: String(deck.max_answer_seconds ?? 60),
   })
 
   /**
@@ -60,8 +61,12 @@ export function Browse({
     const next = { ...options, ...patch }
     setOptions(next)
     const perDay = Number(next.newPerDay)
+    const maxAnswer = Number(next.maxAnswer)
     if (next.newPerDay.trim() && Number.isFinite(perDay))
-      void repo.setDeckOptions(deck.id, Number(next.retention), perDay, next.bury)
+      void repo.setDeckOptions(
+        deck.id, Number(next.retention), perDay, next.bury,
+        next.maxAnswer.trim() && Number.isFinite(maxAnswer) ? maxAnswer : 60,
+      )
   }
 
   const load = useCallback(async () => setNotes(await repo.notesInDeck(deck.id)), [deck.id])
@@ -73,7 +78,7 @@ export function Browse({
   )
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-5xl">
       <header className="mb-6">
         <Button variant="ghost" size="sm" className="-ml-2 mb-3 text-muted-foreground" onClick={onBack}>
           <ChevronLeft /> All decks
@@ -144,10 +149,22 @@ export function Browse({
             <span className="text-xs text-muted-foreground">until tomorrow</span>
           </div>
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="max-answer" className={LABEL}>Longest answer</Label>
+          <div className="flex h-8 items-center gap-2">
+            <Input id="max-answer" type="number" min={5} max={600}
+                   className="h-8 w-20 font-mono text-xs"
+                   value={options.maxAnswer}
+                   onChange={(e) => saveOptions({ maxAnswer: e.target.value })} />
+            <span className="text-xs text-muted-foreground">seconds</span>
+          </div>
+        </div>
         <p className="max-w-xs text-xs text-muted-foreground">
           Applies to {deck.name} itself. Changing retention affects the next review of
           each card, never one already logged. Burying hides a note's other cards once
-          you answer one, so you do not grade a reverse you were just shown.
+          you answer one, so you do not grade a reverse you were just shown. The
+          longest answer is a ceiling on what gets *recorded*, so a card you walked
+          away from cannot claim an hour of study.
         </p>
       </div>
 

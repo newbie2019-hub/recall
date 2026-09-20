@@ -89,7 +89,7 @@ export function FilteredDeckPage({ mode }: { mode: 'new' | 'edit' }) {
 
   if (missing) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-3 px-6">
+      <div className="mx-auto flex max-w-md flex-col justify-center gap-3 py-20">
         <h1 className="font-display text-3xl">No such filtered deck</h1>
         <p className="text-sm text-muted-foreground">
           It may have been emptied and deleted, or this link came from another device.
@@ -103,7 +103,7 @@ export function FilteredDeckPage({ mode }: { mode: 'new' | 'edit' }) {
 
   if (loading) {
     return (
-      <div className="mx-auto min-h-dvh max-w-xl space-y-3 px-4 py-10 sm:px-6">
+      <div className="mx-auto max-w-xl space-y-3">
         <Skeleton className="h-9 w-56" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-10 w-full" />
@@ -114,7 +114,7 @@ export function FilteredDeckPage({ mode }: { mode: 'new' | 'edit' }) {
   const field = 'text-[0.625rem] tracking-[0.14em] text-muted-foreground uppercase'
 
   return (
-    <div className="mx-auto min-h-dvh max-w-xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-xl">
       <header className="mb-8">
         <h1 className="font-display text-4xl tracking-tight">
           {mode === 'new' ? 'Custom study' : name}

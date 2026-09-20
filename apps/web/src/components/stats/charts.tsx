@@ -14,7 +14,7 @@
  * hairline recessive gridlines, one sequential hue, and text that never wears
  * the data colour.
  */
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import type { DayCount, ForecastDay, HourRow } from '@/db/queries/stats'
 
@@ -79,6 +79,22 @@ export function Figure({
 export function RetentionMeter({
   label, achieved, target, tested, hero = false,
 }: { label: string; achieved: number; target: number; tested: number; hero?: boolean }) {
+  // No tests means no rate. `0 / 0` is `NaN`, and a meter that renders "NaN%"
+  // at full width is worse than one that admits it has nothing to say — which
+  // is the same rule as the n-threshold suppression elsewhere in this file.
+  if (!tested || !Number.isFinite(achieved)) {
+    return (
+      <div className={cn('grid gap-1', RAMP)}>
+        <span className={cn('truncate text-sm', hero && 'text-muted-foreground')}>{label}</span>
+        {hero && <p className="font-display text-6xl leading-none tracking-tight">—</p>}
+        <div className="h-2 w-full bg-border" />
+        <p className="font-mono text-[0.6875rem] text-muted-foreground">
+          no recall tests yet
+        </p>
+      </div>
+    )
+  }
+
   const short = achieved < target - 0.02
   const delta = achieved - target
   return (
@@ -366,13 +382,282 @@ export function Heatmap({ days, streak }: { days: DayCount[]; streak: number }) 
   )
 }
 
-/** The one tile that is a number and not a chart. */
-export function Tile({ label, value, note }: { label: string; value: string; note?: string }) {
+/**
+ * The one tile that is a number and not a chart.
+ *
+ * `note` is not decoration and is close to required in practice: a number with
+ * nothing beside it is trivia, because the reader has no way to know whether
+ * 340 is good. The comparison, the denominator or the unit is what makes it a
+ * statistic.
+ *
+ * `help` is the sentence explaining where the figure came from. Several of
+ * these are model output rather than measurement — burden, daily cost, anything
+ * derived from stability — and a dashboard that does not say so is laundering a
+ * prediction as a fact. Delivered as a `title`, which costs nothing, works on
+ * keyboard focus, and cannot collide with a viewport edge the way a floating
+ * tooltip does.
+ *
+ * ponytail: `title` is invisible on touch. A real popover is the upgrade if
+ * anyone asks; the sentences are already written and would move as they are.
+ */
+export function Tile({
+  label, value, note, help, icon: Icon,
+}: {
+  label: string
+  value: string
+  note?: string
+  help?: string
+  icon?: ComponentType<{ className?: string }>
+}) {
   return (
-    <div className="border-t border-border pt-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-semibold leading-tight">{value}</p>
+    <div className="border-t border-border pt-3" title={help}>
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {Icon && <Icon className="size-3.5" />}
+        {label}
+        {help && <span className="sr-only">. {help}</span>}
+      </p>
+      <p className="text-2xl leading-tight font-semibold tabular-nums">{value}</p>
       {note && <p className="font-mono text-[0.6875rem] text-muted-foreground">{note}</p>}
     </div>
+  )
+}
+
+// ── time, composition and workload (PLAN §7) ──────────────────────────────
+
+/** Minutes, said the way a person would say them. */
+export function duration(ms: number): string {
+  const mins = Math.round(ms / 60_000)
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  return mins % 60 ? `${hours}h ${mins % 60}m` : `${hours}h`
+}
+
+/**
+ * The same calendar as the review heatmap, measuring time instead of count.
+ *
+ * Worth its own chart rather than a toggle on the other one: "I studied every
+ * day" and "I studied for four hours" are different claims, and a fortnight of
+ * five-minute days looks identical to a fortnight of real work when you only
+ * count cards. Side by side, the difference between them is the finding.
+ */
+export function TimeHeatmap({ days }: { days: { date: number; ms: number; reviews: number }[] }) {
+  const active = days.filter((d) => d.ms > 0).map((d) => d.ms).sort((a, b) => a - b)
+  const cap = active.length ? active[Math.floor(active.length * 0.9)]! : 1
+  const step = (ms: number) => (ms === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil((ms / cap) * 5))))
+  const total = days.reduce((s, d) => s + d.ms, 0)
+
+  const lead = new Date(days[0]!.date).getDay()
+  const cols = Math.ceil((lead + days.length) / 7)
+  const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+  const month = new Intl.DateTimeFormat(undefined, { month: 'short' })
+
+  return (
+    <Figure
+      title="A year of minutes"
+      hint={`${duration(total)} across ${plural(active.length, 'day')} · typical day ${duration(cap)}`}
+    >
+      <svg
+        viewBox={`0 0 ${cols * PITCH} ${7 * PITCH + 14}`}
+        className="w-full"
+        role="img"
+        aria-label={`Study-time heatmap: ${duration(total)} across ${active.length} days.`}
+      >
+        {days.map((d, i) => {
+          const cell = lead + i
+          const s = step(d.ms)
+          return (
+            <rect
+              key={d.date}
+              x={Math.floor(cell / 7) * PITCH}
+              y={(cell % 7) * PITCH}
+              width={CELL}
+              height={CELL}
+              rx="1"
+              className={s === 0 ? 'fill-border' : undefined}
+              style={s === 0 ? undefined : { fill: `var(--h${s})` }}
+              data-label={
+                d.ms
+                  ? `${fmt.format(d.date)}: ${duration(d.ms)} over ${plural(d.reviews, 'card')}`
+                  : `${fmt.format(d.date)}: nothing studied`
+              }
+            />
+          )
+        })}
+        {days.map((d, i) => {
+          const date = new Date(d.date)
+          if (date.getDate() > 7 || (lead + i) % 7 !== 0) return null
+          return (
+            <text
+              key={`m${d.date}`}
+              x={Math.floor((lead + i) / 7) * PITCH}
+              y={7 * PITCH + 10}
+              className="fill-muted-foreground font-mono text-[9px]"
+            >
+              {month.format(date)}
+            </text>
+          )
+        })}
+      </svg>
+      <p className="mt-1 flex items-center justify-end gap-1 font-mono text-[0.6875rem] text-muted-foreground">
+        less
+        <span className="inline-block size-2 bg-border" />
+        {[1, 2, 3, 4, 5].map((s) => (
+          <span key={s} className="inline-block size-2" style={{ background: `var(--h${s})` }} />
+        ))}
+        more
+      </p>
+    </Figure>
+  )
+}
+
+/**
+ * Parts of a whole, as one bar.
+ *
+ * Not a pie. Card states are *ordinal* — new, learning, young, mature are
+ * stages of one pipeline — so the sequential ramp is the semantically right
+ * encoding and the order of the segments is fixed by meaning rather than by
+ * size. A bar also stacks: one row per deck would compare decks for free, which
+ * a row of pie charts categorically cannot do.
+ *
+ * Every segment is direct-labelled, because the interior of a stacked bar is
+ * read against a moving baseline and the labels are what make it legible.
+ */
+export function Composition({
+  title, hint, parts,
+}: {
+  title: string
+  hint: string
+  parts: { label: string; value: number; step: number }[]
+}) {
+  const sum = parts.reduce((s, p) => s + p.value, 0)
+  const total = sum || 1
+  const shown = parts.filter((p) => p.value > 0)
+
+  if (!sum) {
+    return (
+      <Figure title={title} hint="nothing in this window">
+        <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>
+      </Figure>
+    )
+  }
+
+  return (
+    <Figure title={title} hint={hint}>
+      <div className="flex h-7 w-full overflow-hidden rounded-sm" role="img"
+           aria-label={shown.map((p) => `${p.label} ${p.value}`).join(', ')}>
+        {shown.map((p) => (
+          <span
+            key={p.label}
+            className="h-full"
+            style={{ width: `${(p.value / total) * 100}%`, background: `var(--h${p.step})` }}
+            data-label={`${p.label}: ${p.value.toLocaleString()} (${pct(p.value / total)})`}
+          />
+        ))}
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
+        {parts.map((p) => (
+          <div key={p.label} className="flex items-center gap-2">
+            <span className="size-2 shrink-0 rounded-[1px]" style={{ background: `var(--h${p.step})` }} />
+            <dt className="flex-1 truncate text-muted-foreground">{p.label}</dt>
+            <dd className="font-mono tabular-nums">{p.value.toLocaleString()}</dd>
+          </div>
+        ))}
+      </dl>
+    </Figure>
+  )
+}
+
+/**
+ * A ranked list of magnitudes — minutes per deck, most often.
+ *
+ * Horizontal because the labels are deck names and deck names are words;
+ * zero-based because it is a length encoding and a truncated bar is the classic
+ * lie. Sorted, so "where is my time going" is one sweep of the eye.
+ */
+export function RankedBars({
+  title, hint, rows, format,
+}: {
+  title: string
+  hint: string
+  rows: { label: string; value: number; note?: string }[]
+  format: (value: number) => string
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.value))
+
+  return (
+    <Figure title={title} hint={hint}>
+      <ul className="space-y-1.5">
+        {rows.map((r) => (
+          <li key={r.label} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 text-xs">
+            <span className="truncate text-muted-foreground" title={r.label}>{r.label}</span>
+            <span className="h-3 w-full rounded-[2px] bg-border/60">
+              <span
+                className="block h-full rounded-[2px]"
+                style={{ width: `${(r.value / max) * 100}%`, background: 'var(--h4)' }}
+                data-label={`${r.label}: ${format(r.value)}${r.note ? ` · ${r.note}` : ''}`}
+              />
+            </span>
+            <span className="font-mono tabular-nums">{format(r.value)}</span>
+          </li>
+        ))}
+        {!rows.length && <li className="text-xs text-muted-foreground">Nothing in this window.</li>}
+      </ul>
+    </Figure>
+  )
+}
+
+/**
+ * How long a card takes.
+ *
+ * A histogram and three percentiles in words. Deliberately *not* a box plot:
+ * the misreadings are documented and common even among people who read charts
+ * for a living — whiskers taken for the full range, the box taken for
+ * frequency — and a median with a p90 beside it says the same thing in a
+ * sentence anybody can read.
+ */
+export function AnswerTimeHistogram({
+  buckets, median, p90, total,
+}: {
+  buckets: { upTo: number; n: number }[]
+  median: number
+  p90: number
+  total: number
+}) {
+  const max = Math.max(1, ...buckets.map((b) => b.n))
+
+  return (
+    <Figure
+      title="How long a card takes"
+      hint={
+        total
+          ? `median ${(median / 1000).toFixed(1)}s · 90% under ${(p90 / 1000).toFixed(1)}s · ${plural(total, 'card')}`
+          : 'nothing answered in this window'
+      }
+    >
+      <div className="flex h-24 items-end gap-1" role="img"
+           aria-label={`Answer times: median ${(median / 1000).toFixed(1)} seconds, 90% under ${(p90 / 1000).toFixed(1)} seconds.`}>
+        {buckets.map((b, i) => (
+          <span
+            key={b.upTo}
+            className="flex-1"
+            style={{
+              height: `${Math.max(b.n ? 3 : 0, (b.n / max) * 100)}%`,
+              background: `var(--h${Math.min(5, 2 + Math.floor(i / 3))})`,
+              // The last bucket is everything past the axis, so it is set apart
+              // rather than quietly absorbing the tail.
+              marginLeft: i === buckets.length - 1 ? '0.5rem' : undefined,
+            }}
+            data-label={`${i === buckets.length - 1 ? `over ${buckets[i - 1]!.upTo}s` : `up to ${b.upTo}s`}: ${plural(b.n, 'card')}`}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex gap-1 font-mono text-[9px] text-muted-foreground">
+        {buckets.map((b, i) => (
+          <span key={b.upTo} className="flex-1 text-center" style={{ marginLeft: i === buckets.length - 1 ? '0.5rem' : undefined }}>
+            {i === buckets.length - 1 ? `${buckets[i - 1]!.upTo}s+` : b.upTo}
+          </span>
+        ))}
+      </div>
+    </Figure>
   )
 }

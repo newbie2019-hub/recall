@@ -2,6 +2,7 @@ import type {
   ApiEnvelope, ApiErrorBody, ApiErrorCode, DeviceIdentity, DeviceSummary,
   Session, SyncPayload, SyncPullResult, SyncPushResult,
 } from './types.ts'
+import type { OnboardingAnswers } from '../onboarding.ts'
 
 /**
  * The typed client both apps share.
@@ -167,6 +168,39 @@ export class ApiClient {
 
   me(): Promise<Session['user']> {
     return this.request<Session['user']>('auth/me', { idempotent: true })
+  }
+
+  /** Name, address or avatar. A new address loses its verification server-side. */
+  updateProfile(input: { name?: string; email?: string; avatar?: string | null }): Promise<Session['user']> {
+    return this.request<Session['user']>('auth/profile', { method: 'PATCH', body: input })
+  }
+
+  /**
+   * Change the password, proving the current one.
+   *
+   * Never retried: a retry that succeeded the first time comes back as "that is
+   * not your current password", which reads as though the change failed.
+   */
+  changePassword(input: { current_password: string; password: string }): Promise<{ changed: boolean }> {
+    return this.request<{ changed: boolean }>('auth/password', {
+      method: 'PUT',
+      body: { ...input, password_confirmation: input.password },
+    })
+  }
+
+  /**
+   * Store the onboarding answers.
+   *
+   * A PUT and an upsert, so a refresh or a back-button in the wizard updates
+   * the one row rather than starting a second. Idempotent for the same reason:
+   * replaying it cannot do anything the first call did not.
+   */
+  saveOnboarding(input: OnboardingAnswers): Promise<{ onboarded: boolean }> {
+    return this.request<{ onboarded: boolean }>('onboarding', {
+      method: 'PUT',
+      body: input,
+      idempotent: true,
+    })
   }
 
   /**

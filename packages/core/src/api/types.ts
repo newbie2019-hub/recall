@@ -48,6 +48,13 @@ export interface Session {
      * the call is allowed — that is the server's policy and stays there.
      */
     is_moderator: boolean
+    /**
+     * Whether `/welcome` has been finished. The route guard reads this, so it
+     * travels on the session rather than costing a second request on boot.
+     */
+    onboarded: boolean
+    /** A key into the client's own drawn set, or null for initials. */
+    avatar: string | null
   }
   device: DeviceSummary
   token: string

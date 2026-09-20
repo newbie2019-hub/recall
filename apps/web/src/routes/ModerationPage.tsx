@@ -49,7 +49,7 @@ export function ModerationPage() {
   }
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-5xl">
       <header className="mb-6">
         <h1 className="font-display text-4xl tracking-tight">Reports</h1>
         <p className="mt-1 text-sm text-muted-foreground">

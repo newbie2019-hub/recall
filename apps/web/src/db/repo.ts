@@ -407,6 +407,7 @@ export interface DeckRow {
   due: number
   new: number
   retention_target: number
+  max_answer_seconds: number
   new_per_day: number
   /** Hide a note's other cards until tomorrow once one of them is answered. */
   bury_new: number
@@ -592,10 +593,11 @@ export const setDeckOptions = (
   retention: number,
   newPerDay: number,
   burySiblings = true,
+  maxAnswerSeconds = 60,
 ) =>
   db.run(
     `UPDATE decks SET retention_target = ?, new_per_day = ?, bury_new = ?, bury_reviews = ?,
-            updated_at = ? WHERE id = ?`,
+            max_answer_seconds = ?, updated_at = ? WHERE id = ?`,
     [
       retention,
       Math.min(9999, Math.max(0, Math.round(newPerDay) || 0)),
@@ -604,6 +606,9 @@ export const setDeckOptions = (
       // not review siblings" is a distinction nobody has ever wanted to make.
       burySiblings ? 1 : 0,
       burySiblings ? 1 : 0,
+      // The ceiling on one recorded answer. Clamped rather than trusted: a zero
+      // here would log every review as instant and quietly flatten the stats.
+      Math.min(600, Math.max(5, Math.round(maxAnswerSeconds) || 60)),
       Date.now(),
       deckId,
     ],
@@ -687,7 +692,7 @@ export async function deckTree(now = Date.now()): Promise<DeckRow[]> {
            LEFT JOIN intro i ON i.id = d.id
        )
      SELECT t.id, t.parent_id, t.name, t.path, t.depth,
-            dk.retention_target, dk.new_per_day, dk.bury_new, dk.filtered,
+            dk.retention_target, dk.new_per_day, dk.bury_new, dk.max_answer_seconds, dk.filtered,
             COALESCE(SUM(c.due), 0) AS due,
             COALESCE(SUM(c.new), 0) AS new
        FROM tree t
@@ -939,6 +944,8 @@ export interface StudyCard {
   deckPath: string
   deckName: string
   retentionTarget: number
+  /** The deck's ceiling on one answer, in seconds. See `recordReview`. */
+  maxAnswerSeconds: number
 }
 
 /**
@@ -973,7 +980,7 @@ export async function nextCard(deckId?: string | null, now = Date.now()): Promis
     : ''
   const rows = await db.select<any>(
     `SELECT c.*, n.fields, n.tags, n.note_type, n.fma_id, n.deck_id, n.updated_at,
-            d.retention_target, d.name AS deck_name,
+            d.retention_target, d.max_answer_seconds, d.name AS deck_name,
             p.name AS parent_name, g.name AS grandparent_name,
             t.id AS nt_id, t.name AS nt_name, t.fields AS nt_fields,
             t.templates AS nt_templates, t.css AS nt_css, t.kind AS nt_kind,
@@ -1016,6 +1023,7 @@ export async function nextCard(deckId?: string | null, now = Date.now()): Promis
     deckPath: [r.grandparent_name, r.parent_name, r.deck_name].filter(Boolean).join(' · '),
     deckName: r.deck_name,
     retentionTarget: r.retention_target,
+    maxAnswerSeconds: r.max_answer_seconds,
   }
 }
 
@@ -1054,6 +1062,19 @@ export async function counts(deckId?: string | null, now = Date.now()) {
 
 const startOfToday = () => new Date(new Date().setHours(0, 0, 0, 0)).getTime()
 
+/**
+ * The ceiling on one answer, in milliseconds.
+ *
+ * The clock in `lib/stopwatch.ts` already stops for a hidden tab and for idle
+ * time, which catches most of it. This is the backstop for the rest — a card
+ * someone sat in front of, awake, for eleven minutes is not eleven minutes of
+ * evidence about how long that card takes, and one of those in a log is enough
+ * to move a deck's mean by a minute. Anki caps at sixty seconds by default and
+ * this matches, per deck, because a cloze paragraph is not a vocabulary card.
+ */
+const capDuration = (durationMs: number, maxSeconds: number) =>
+  Math.min(Math.max(0, Math.round(durationMs)), Math.max(1, maxSeconds) * 1000)
+
 export async function recordReview(
   sc: StudyCard,
   rating: RatingValue,
@@ -1065,7 +1086,7 @@ export async function recordReview(
     {
       sql: `INSERT INTO reviews (id, card_id, ts, rating, duration_ms, synced)
             VALUES (?, ?, ?, ?, ?, 0)`,
-      params: [id(), sc.card.id, now, rating, durationMs],
+      params: [id(), sc.card.id, now, rating, capDuration(durationMs, sc.maxAnswerSeconds ?? 60)],
     },
     { sql: UPDATE_CARD, params: updateParams(next) },
   ])

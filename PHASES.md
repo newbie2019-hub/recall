@@ -7,9 +7,13 @@ deferred to post-launch**.
 Rule for every phase: it ends with something you can actually use. Estimates
 assume one developer.
 
-**Status:** 0–4 ✅ · 5 ✅ (one line open: server-side FSRS) · 6 ✅ · 7 ✅ · 8 ✅ ·
-9 ✅ (live cursors deferred, with the reason) · **next: the media transport at
-the end of Phase 8 — now the oldest unpaid item in the plan** · 10–12 planned.
+**Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
+· 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) · **next:
+Phase 10, designed in [AI.md](AI.md)** · 11 planned · 12 (mobile) deferred
+indefinitely at the product's request.
+
+**Unpaid, oldest first:** the media transport at the end of Phase 8 — published
+and shared decks still arrive without their images.
 
 Inside a phase, ✅ is landed and tested, ◻︎ is not started, ⚠️ is partly there and
 says what is missing.
@@ -259,10 +263,25 @@ existing note grow a card that keeps its history.
   4.8).
 - ✅ `devices` carries the token *and* that device's sync cursor — same row, so
   revoking a device is one delete.
-- ✅ **The invariant: a 401 never takes the collection away.** Sign-in is a state
-  (`synced` / `sync paused` / `local only`), never a wall. Expiry queues rows and
-  shows one banner. *`SyncBanner` carries the three states and `AccountMenu`
-  prints the one in force beside the account it belongs to.*
+- ⚠️ **The invariant: a 401 never takes the collection away.** *Still true, and
+  the half that changed is the half above it.* Sign-in **is** a wall now —
+  `components/RequireAuth.tsx`, added after this phase at the product's request,
+  because an account is required and the onboarding survey depends on one. What
+  survives unchanged, and is the part that was ever load-bearing: **a failed
+  sign-in is never a wall.** The guard asks "has this browser ever held a
+  confirmed session", answered from a user cached beside the token, so an
+  expired token or a dead network leaves you inside the app with the banner
+  showing `sync paused`. Only an explicit sign-out puts the wall back.
+  *`SyncBanner` carries the three states and `AccountMenu` prints the one in
+  force beside the account it belongs to.*
+- ✅ **Onboarding** (`/welcome`, six one-question steps) writes `user_profiles`
+  and flips `onboarded` on the session, which is what the guard reads. Its
+  `daily_minutes` answer is the target the stats screen measures against — the
+  one question that gives something back.
+- ✅ **Account self-service:** `PATCH auth/profile` (name, address, avatar) and
+  `PUT auth/password`. Changing the address un-verifies it, deliberately; the
+  password change proves the old password even though the token already
+  authenticates the call.
 - ✅ **Router first** (UI.md §6). A reset link has to land on a URL, marketplace
   decks have to be shareable, and Phase 12's universal links must resolve to the
   same paths. Four screens on a `View` union was right; twelve is not. Paths are
@@ -362,6 +381,19 @@ and signing out and back in never costs a card.
 ---
 
 ## Phase 6 — Dashboard, global card browser & Pomodoro · ~1.5 weeks · ✅
+
+> **Revisited after Phase 9.** The dashboard grew three views (Progress, Effort,
+> Collection), a study-time heatmap and **Burden** — `Σ 1/interval`, the reviews
+> a day this collection has committed you to, which SuperMemo has shown since
+> the nineties and Anki still does not. The review clock was rebuilt first
+> (`lib/stopwatch.ts`): it stops for a hidden tab and for idle time, and
+> `recordReview` caps one answer at the deck's `max_answer_seconds`. Every time
+> figure on the screen was meaningless until that landed. **Leech detection was
+> replaced**: a lapse count is not interval-adjusted, so it suspends a card
+> failing 8 in 80 — exactly as designed at 90% retention — and takes eight
+> failures to notice one failing 8 in 11. It is now a Poisson-binomial tail test
+> over the retrievability FSRS predicted before each answer, which replay makes
+> available and Anki cannot compute.
 
 - ✅ **Global card browser** — cross-deck, filters on state / flag / tag / due /
   lapses, and **bulk** suspend, flag, reschedule, retag, move. One of the two

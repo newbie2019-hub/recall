@@ -27,7 +27,7 @@ const CONTACT = import.meta.env?.VITE_ABUSE_CONTACT ?? 'abuse@example.invalid'
 
 export function LegalPage() {
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-2xl">
       <Button variant="ghost" size="sm" className="-ml-2 mb-6" asChild>
         <Link to={paths.marketplace}>← Explore</Link>
       </Button>

@@ -4,11 +4,19 @@ import { ApiClient, type DeviceSummary, type Session, type TokenStore } from '@r
 /**
  * Who is signed in, and whether the collection is currently reaching a server.
  *
- * The invariant this file exists to hold (PHASES §5): **a 401 never takes the
- * collection away.** Signing in is a *state*, not a gate. Every screen works
- * signed out, every screen works with an expired token, and the only difference
- * a bad token makes is a banner and a queue that stops draining. Nothing here
- * may ever clear local data, and nothing here may ever redirect to sign-in.
+ * **This file used to say signing in was a state and never a gate.** That
+ * changed: the app now requires an account, and `components/RequireAuth.tsx` is
+ * the wall. What did *not* change is the invariant underneath it (PHASES §5):
+ * **a 401 never takes the collection away.** A rejected token or a dead network
+ * pauses the queue and nothing else — it must never sign anyone out, never
+ * clear local data, and never bounce somebody away from cards already on their
+ * device.
+ *
+ * Which is why the last known user is cached beside the token. On a boot with
+ * no network `me()` throws, and a guard reading a null `user` would throw an
+ * offline learner back to the sign-in page — turning a gate meant to keep
+ * strangers out into one that locks the owner out. The rule the cache buys:
+ * **a token that has ever succeeded keeps you in, offline, until you sign out.**
  */
 export type SyncStatus =
   /** No account on this device. Reviews accumulate; nothing is waiting to send. */
@@ -27,6 +35,31 @@ export type SyncStatus =
  */
 export const TOKEN_KEY = 'recall.token'
 const DEVICE_KEY = 'recall.device_id'
+
+/**
+ * The last user the server confirmed, so a cold offline start still knows who
+ * this is. It dies with the token — clearing site data or signing out has to
+ * take both, or the app would show a name it can no longer prove.
+ */
+const USER_KEY = 'recall.user'
+
+function cacheUser(user: Session['user'] | null): void {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user))
+    else localStorage.removeItem(USER_KEY)
+  } catch {
+    // A full or blocked storage costs the offline session, never the run.
+  }
+}
+
+function cachedUser(): Session['user'] | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY)
+    return raw ? (JSON.parse(raw) as Session['user']) : null
+  } catch {
+    return null
+  }
+}
 
 const localTokens: TokenStore = {
   get: async () => localStorage.getItem(TOKEN_KEY),
@@ -64,6 +97,8 @@ interface AuthValue {
   signUp(name: string, email: string, password: string): Promise<void>
   /** Drops the token and keeps every local row. Never destructive. */
   signOut(): Promise<void>
+  /** Re-read the account, after something server-side changed it. */
+  refreshUser(): Promise<void>
   /** Called by the sync loop after a successful or failed exchange. */
   reportSync(ok: boolean): void
   client: ApiClient
@@ -111,10 +146,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const me = await client.me()
         if (!cancelled) {
           setUser(me)
+          cacheUser(me)
           setStatus('synced')
         }
       } catch {
-        if (!cancelled) setStatus('paused')
+        // Offline, or the token expired. Either way the person stays signed in
+        // with whatever we last knew about them; the banner says the rest.
+        if (!cancelled) {
+          setUser(cachedUser())
+          setStatus('paused')
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -126,6 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adopt = useCallback((session: Session) => {
     setUser(session.user)
+    cacheUser(session.user)
     setDevice(session.device)
     setStatus('synced')
   }, [])
@@ -146,9 +188,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     await client.logout()
+    cacheUser(null)
     setUser(null)
     setDevice(null)
     setStatus('local-only')
+  }, [client])
+
+  // Onboarding flips `onboarded` server-side, and the guard reads it from here.
+  const refreshUser = useCallback(async () => {
+    const me = await client.me()
+    setUser(me)
+    cacheUser(me)
+    setStatus('synced')
   }, [client])
 
   const reportSync = useCallback((ok: boolean) => {
@@ -156,8 +207,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, device, status, loading, signIn, signUp, signOut, reportSync, client }),
-    [user, device, status, loading, signIn, signUp, signOut, reportSync, client],
+    () => ({ user, device, status, loading, signIn, signUp, signOut, refreshUser, reportSync, client }),
+    [user, device, status, loading, signIn, signUp, signOut, refreshUser, reportSync, client],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

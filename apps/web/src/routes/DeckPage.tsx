@@ -23,7 +23,7 @@ export function DeckPage() {
 
   if (!decks) {
     return (
-      <div className="mx-auto min-h-dvh max-w-2xl space-y-3 px-4 py-10 sm:px-6">
+      <div className="mx-auto max-w-2xl space-y-3">
         <Skeleton className="h-9 w-48" />
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-64 w-full" />
@@ -36,7 +36,7 @@ export function DeckPage() {
   // blank screen.
   if (!deck) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-3 px-6">
+      <div className="mx-auto flex max-w-md flex-col justify-center gap-3 py-20">
         <h1 className="font-display text-3xl">No such deck</h1>
         <p className="text-sm text-muted-foreground">
           It may have been deleted, or this link came from another device.

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,11 @@ import { importApkg, type ImportProgress, type ImportReport } from '@/lib/anki/i
  * were *updated* rather than added is the number that tells you whether the
  * guid matching worked, and `[latex]` and unmeasurable occlusions are the two
  * things we knowingly do not carry perfectly (PHASES.md, Phase 4).
+ *
+ * Split into a hook and a pair of buttons because the two actions now live in
+ * the shell's **Create** menu, and neither the file input nor the progress
+ * dialog can live inside a `DropdownMenuContent` — that subtree unmounts the
+ * moment the menu closes, which is the same moment the import starts.
  */
 
 const STAGE: Record<ImportProgress['stage'], string> = {
@@ -25,7 +30,16 @@ const STAGE: Record<ImportProgress['stage'], string> = {
   done: 'Done',
 }
 
-export function ApkgButtons({ deckId, onImported }: { deckId?: string | null; onImported: () => void }) {
+export interface Apkg {
+  busy: boolean
+  /** Opens the file picker. Safe to call from a menu item that is closing. */
+  pick(): void
+  save(): void
+  /** The file input and the progress dialog. Render outside any menu. */
+  ui: ReactNode
+}
+
+export function useApkg({ deckId, onImported }: { deckId?: string | null; onImported: () => void }): Apkg {
   const picker = useRef<HTMLInputElement>(null)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
   const [report, setReport] = useState<ImportReport | null>(null)
@@ -68,14 +82,8 @@ export function ApkgButtons({ deckId, onImported }: { deckId?: string | null; on
 
   const pct = progress?.total ? Math.round((progress.done / progress.total) * 100) : 0
 
-  return (
+  const ui = (
     <>
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => picker.current?.click()}>
-        <Upload /> Import
-      </Button>
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => void save()}>
-        <Download /> Export
-      </Button>
       <input
         ref={picker}
         type="file"
@@ -132,6 +140,24 @@ export function ApkgButtons({ deckId, onImported }: { deckId?: string | null; on
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  )
+
+  return { busy, pick: () => picker.current?.click(), save: () => void save(), ui }
+}
+
+/** The pair of buttons, for screens that are not the shell (Settings → Data). */
+export function ApkgButtons({ deckId, onImported }: { deckId?: string | null; onImported: () => void }) {
+  const apkg = useApkg({ deckId, onImported })
+  return (
+    <>
+      <Button variant="outline" size="sm" disabled={apkg.busy} onClick={apkg.pick}>
+        <Upload /> Import
+      </Button>
+      <Button variant="outline" size="sm" disabled={apkg.busy} onClick={apkg.save}>
+        <Download /> Export
+      </Button>
+      {apkg.ui}
     </>
   )
 }

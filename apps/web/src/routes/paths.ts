@@ -20,6 +20,11 @@ export const paths = {
   resetPassword: (token: string) => `/reset/${token}`,
   settings: (section = 'profile') => `/settings/${section}`,
 
+  // The onboarding wizard. A prefix, not a leaf: `RequireAuth` tests
+  // `startsWith` against it so `/welcome/study` does not redirect to itself.
+  welcome: '/welcome',
+  welcomeStep: (step: string) => `/welcome/${step}`,
+
   // Phase 6 — the two screens heavy users live in, plus the focus timer.
   browse: '/browse',
   stats: '/stats',
@@ -47,14 +52,22 @@ export const paths = {
 } as const
 
 /**
- * Paths that mean something to a visitor with no account and no local
- * collection — a reset link from an email, a deck someone shared.
+ * Paths that mean something to a visitor with no account.
  *
- * **Not a guard list.** Every other path is open too: signing in is a state and
- * never a wall (PHASES §5), and nothing in this app redirects to sign-in. This
- * exists so Phase 12 knows which URLs a cold universal link must be able to
- * open, and for nothing else. If you are reading it while writing a route
- * guard, stop — the guard is the bug.
+ * **This is now the guard's allow-list**, which is what the name always
+ * implied and what the previous comment here explicitly forbade. The app
+ * requires an account; these are the routes that must still open without one,
+ * and each earns it for a reason:
+ *
+ * - the four auth paths, or there would be no way to get an account;
+ * - `/explore` and a listing, because a shared deck link is handed to people
+ *   who are not users yet and a sign-in wall in front of it would kill the
+ *   marketplace's only distribution channel;
+ * - `/legal`, because the person who needs to send a takedown notice is
+ *   usually not a user at all.
+ *
+ * It is still the list Phase 12's universal links resolve against — a cold
+ * link must open one of these, or it opens a redirect.
  */
 export const PUBLIC_PATHS = [
   paths.signIn, paths.signUp, paths.forgotPassword, paths.marketplace, paths.legal,

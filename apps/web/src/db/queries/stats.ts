@@ -279,6 +279,7 @@ interface CandidateRow {
   fields: string
   nt_fields: string
   sort_field: number
+  retention_target: number
 }
 
 /**
@@ -294,18 +295,22 @@ export async function leeches(
   options: Partial<LeechOptions> = {},
   limit = 50,
 ): Promise<LeechRow[]> {
-  const threshold = options.threshold ?? 8
+  // Two lapses, not eight: the statistical test can call a card hopeless after
+  // two failures it was expected to pass, so a shortlist gated on the old
+  // threshold would hide exactly the cards the new test exists to catch. The
+  // floor is only here to keep the history fetch from loading the collection.
   const candidates = await db.select<CandidateRow>(
     `SELECT c.id, c.note_id, c.ord, c.lapses, c.suspended, c.flag,
-            d.name AS deck, n.fields, nt.fields AS nt_fields, nt.sort_field
+            d.name AS deck, d.retention_target, n.fields,
+            nt.fields AS nt_fields, nt.sort_field
        FROM cards c
        JOIN notes n ON n.id = c.note_id
        JOIN decks d ON d.id = ${DECK_OF}
        JOIN note_types nt ON nt.id = n.note_type
-      WHERE c.lapses >= ?1
+      WHERE c.lapses >= 2
       ORDER BY c.lapses DESC
-      LIMIT ?2`,
-    [Math.max(1, threshold - 2), limit],
+      LIMIT ?1`,
+    [limit],
   )
   if (!candidates.length) return []
 
@@ -341,11 +346,17 @@ export async function leeches(
         preview: preview(c),
         suspended: !!c.suspended,
         flag: c.flag,
-        verdict: detectLeech({ id: c.id, ord: c.ord }, byCard.get(c.id) ?? [], siblings, options),
+        verdict: detectLeech({ id: c.id, ord: c.ord }, byCard.get(c.id) ?? [], siblings, {
+          ...options,
+          retentionTarget: options.retentionTarget ?? c.retention_target,
+        }),
       }
     })
     .filter((r) => r.verdict.leech)
-    .sort((a, b) => b.verdict.lapses - a.verdict.lapses)
+    // Worst first means *most improbable* first, not most-failed: a card with
+    // four lapses it should have passed is a bigger problem than one with nine
+    // at intervals it was always going to miss.
+    .sort((a, b) => (a.verdict.surprise ?? 1) - (b.verdict.surprise ?? 1) || b.verdict.lapses - a.verdict.lapses)
 }
 
 function preview(c: CandidateRow): string {
@@ -363,10 +374,14 @@ function preview(c: CandidateRow): string {
  * half threshold — so unsuspending a leech does not re-suspend it on its very
  * next failure, which is the nag that makes people turn the feature off.
  *
- * ponytail: `options` defaults to Anki's 8/suspend because migration 7 added no
- * per-deck leech columns (reported). When they land, read them off the card's
- * deck here — nothing else has to change, the verdict is already a pure
- * function of card + history + options.
+ * The deck's retention target is read here and passed through, which is what
+ * switches `detectLeech` from counting lapses to asking whether these failures
+ * were improbable. Without it, a card failing at intervals it was never going
+ * to survive counts the same as one failing what it should have known.
+ *
+ * ponytail: the action and threshold still default to Anki's 8/suspend because
+ * migration 7 added no per-deck leech columns. When they land, read them off
+ * the same row — nothing else has to change.
  */
 export async function checkLeech(
   cardId: string,
@@ -381,6 +396,18 @@ export async function checkLeech(
       ORDER BY r.ts`,
     [noteId],
   )
+  // The deck's target, so the answer path and the dashboard reach the same
+  // verdict. Without it `detectLeech` silently falls back to counting lapses.
+  const [deck] = await db.select<{ retention_target: number; created: number }>(
+    `SELECT d.retention_target, COALESCE(MIN(r.ts), ?) AS created
+       FROM cards c
+       JOIN notes n ON n.id = c.note_id
+       JOIN decks d ON d.id = COALESCE(c.deck_id, n.deck_id)
+       LEFT JOIN reviews r ON r.card_id = c.id
+      WHERE c.id = ?`,
+    [now, cardId],
+  )
+
   const mine = history.filter((r) => r.card_id === cardId)
   const siblings = [...new Map(history.filter((r) => r.card_id !== cardId).map((r) => [r.card_id, r])).values()]
     .map((r) => ({
@@ -390,7 +417,11 @@ export async function checkLeech(
     }))
 
   const ord = mine[0]?.ord ?? 0
-  const verdict = detectLeech({ id: cardId, ord }, mine, siblings, options)
+  const verdict = detectLeech({ id: cardId, ord }, mine, siblings, {
+    retentionTarget: deck?.retention_target,
+    createdAt: deck?.created,
+    ...options,
+  })
   if (verdict.fires) await writeVerdict(cardId, noteId, verdict, now)
   return verdict.leech ? verdict : null
 }
@@ -497,3 +528,261 @@ export async function burySiblings(
   )
   return ids
 }
+
+// ── time and composition (PLAN §7) ─────────────────────────────────────────
+
+/**
+ * Everything below is about *cost* rather than outcome, and the distinction is
+ * why they are grouped apart.
+ *
+ * Time is a context variable here and never a headline. It is a weak and
+ * unstable predictor of learning, it is trivially gamed by leaving the app
+ * open, and for a fluent learner it runs the wrong way — knowing a card better
+ * means answering it faster. What it is good for is honesty about what the
+ * collection costs, which is a question no accuracy figure answers.
+ *
+ * All of it leans on `reviews.duration_ms` being trustworthy, which it only
+ * became once the review clock started stopping for hidden tabs and idle time
+ * and `recordReview` started capping each answer (`lib/stopwatch.ts`).
+ */
+
+export interface DayTime {
+  date: number
+  ms: number
+  reviews: number
+}
+
+/** Minutes studied per day, for the heatmap and the "this week" tiles. */
+export async function timeByDay(days = 365): Promise<DayTime[]> {
+  const since = startOfDay(Date.now()) - (days - 1) * DAY
+  const rows = await db.select<{ day: number; ms: number; n: number }>(
+    `SELECT CAST((r.ts - ?) / ${DAY} AS INTEGER) AS day,
+            SUM(r.duration_ms) AS ms, COUNT(*) AS n
+       FROM reviews r
+      WHERE r.ts >= ?
+      GROUP BY day`,
+    [since, since],
+  )
+
+  const byDay = new Map(rows.map((r) => [r.day, r]))
+  return Array.from({ length: days }, (_, i) => ({
+    date: since + i * DAY,
+    ms: byDay.get(i)?.ms ?? 0,
+    reviews: byDay.get(i)?.n ?? 0,
+  }))
+}
+
+export interface DeckTime {
+  deck: string
+  ms: number
+  reviews: number
+}
+
+/**
+ * Where the time went, by deck.
+ *
+ * Attributed to the deck the card is in *now*, not the deck it was in when the
+ * review happened — the log does not record the second, and a card that moved
+ * last week did not retroactively spend its time somewhere else.
+ */
+export async function timeByDeck(days = 30, limit = 8): Promise<DeckTime[]> {
+  const rows = await db.select<{ deck: string; ms: number; n: number }>(
+    `SELECT d.name AS deck, SUM(r.duration_ms) AS ms, COUNT(*) AS n
+       FROM reviews r
+       JOIN cards c ON c.id = r.card_id
+       JOIN notes n ON n.id = c.note_id
+       JOIN decks d ON d.id = ${DECK_OF}
+      WHERE r.ts >= ?
+      GROUP BY d.id
+      ORDER BY ms DESC`,
+    [Date.now() - days * DAY],
+  )
+
+  // Everything past the top few becomes one row rather than a long tail nobody
+  // reads: "which deck is eating my week" has at most a handful of answers.
+  const head = rows.slice(0, limit).map((r) => ({ deck: r.deck, ms: r.ms, reviews: r.n }))
+  const tail = rows.slice(limit)
+  if (tail.length) {
+    head.push({
+      deck: `${tail.length} other decks`,
+      ms: tail.reduce((s, r) => s + r.ms, 0),
+      reviews: tail.reduce((s, r) => s + r.n, 0),
+    })
+  }
+  return head
+}
+
+/**
+ * How long a card takes, as a distribution plus the three numbers worth saying
+ * out loud.
+ *
+ * A histogram, not a box plot: box plots are misread by students and experts
+ * alike — whiskers taken for the range, the box taken for frequency — and this
+ * screen is read by people who came here to study medicine, not statistics. The
+ * percentiles carry what a box would have claimed to show, in words.
+ *
+ * The last bucket is an explicit overflow. Answer times are heavily
+ * right-skewed and a linear axis out to the cap would be one tall bar and a lot
+ * of white space.
+ */
+export interface AnswerTimes {
+  buckets: { upTo: number; n: number }[]
+  median: number
+  p90: number
+  total: number
+}
+
+const TIME_BUCKETS = [2, 4, 6, 8, 10, 15, 20, 30, 45, 60]
+
+export async function answerTimes(days = 30): Promise<AnswerTimes> {
+  const rows = await db.select<{ ms: number }>(
+    `SELECT duration_ms AS ms FROM reviews WHERE ts >= ? AND duration_ms > 0 ORDER BY duration_ms`,
+    [Date.now() - days * DAY],
+  )
+
+  const buckets = TIME_BUCKETS.map((upTo) => ({ upTo, n: 0 }))
+  for (const { ms } of rows) {
+    const s = ms / 1000
+    const i = TIME_BUCKETS.findIndex((upTo) => s <= upTo)
+    buckets[i === -1 ? buckets.length - 1 : i]!.n++
+  }
+
+  const at = (q: number) => (rows.length ? rows[Math.min(rows.length - 1, Math.floor(rows.length * q))]!.ms : 0)
+  return { buckets, median: at(0.5), p90: at(0.9), total: rows.length }
+}
+
+/**
+ * Which buttons get pressed.
+ *
+ * Restricted to real recall tests for the same reason the retention figure is:
+ * counting the ten-minute relearning steps after a lapse would report mostly
+ * how many learning steps are configured.
+ */
+export interface ButtonCounts {
+  again: number
+  hard: number
+  good: number
+  easy: number
+}
+
+export async function answerButtons(days = 30): Promise<ButtonCounts> {
+  const [row] = await db.select<ButtonCounts>(
+    `WITH tests AS (${RECALL_TESTS})
+     SELECT SUM(rating = 1) AS again, SUM(rating = 2) AS hard,
+            SUM(rating = 3) AS good, SUM(rating = 4) AS easy
+       FROM tests WHERE gap >= ${DAY} AND ts >= ?`,
+    [Date.now() - days * DAY],
+  )
+  return {
+    again: row?.again ?? 0, hard: row?.hard ?? 0,
+    good: row?.good ?? 0, easy: row?.easy ?? 0,
+  }
+}
+
+/**
+ * What the collection is made of.
+ *
+ * Anki's maturity boundary — an interval of 21 days or more is "mature" — so
+ * the number means the same thing to anyone arriving from there. Suspended
+ * cards are counted apart rather than dropped: a collection that is a third
+ * suspended is a fact about it, and hiding that makes the other numbers look
+ * better than they are.
+ */
+export interface CardCounts {
+  new: number
+  learning: number
+  young: number
+  mature: number
+  suspended: number
+}
+
+export async function cardCounts(): Promise<CardCounts> {
+  const [row] = await db.select<CardCounts>(
+    `SELECT
+       SUM(suspended = 0 AND state = 'new') AS "new",
+       SUM(suspended = 0 AND state IN ('learning','relearning')) AS learning,
+       SUM(suspended = 0 AND state = 'review' AND stability < 21) AS young,
+       SUM(suspended = 0 AND state = 'review' AND stability >= 21) AS mature,
+       SUM(suspended = 1) AS suspended
+     FROM cards`,
+  )
+  return {
+    new: row?.new ?? 0, learning: row?.learning ?? 0, young: row?.young ?? 0,
+    mature: row?.mature ?? 0, suspended: row?.suspended ?? 0,
+  }
+}
+
+/**
+ * What you owe the scheduler, and what it will cost you every day from here.
+ *
+ * **Burden** is SuperMemo's oldest good idea and nothing in Anki shows it:
+ * summing `1/interval` across the collection gives the reviews per day the
+ * collection has committed you to at a steady state. A card on a hundred-day
+ * interval contributes 0.01 of a review a day, forever. Multiplied by how long
+ * an answer actually takes, it is the honest answer to "what does adding two
+ * hundred cards cost me" — a question no accuracy figure touches.
+ */
+export interface Workload {
+  /** Cards past due right now. */
+  overdue: number
+  /** Median days late among them — one very old card should not set the tone. */
+  medianDaysLate: number
+  /** Reviews per day at a steady state. */
+  burden: number
+  /** Burden × the median answer time, in milliseconds. */
+  dailyMs: number
+}
+
+export async function workload(now = Date.now()): Promise<Workload> {
+  const [row] = await db.select<{ overdue: number; burden: number }>(
+    `SELECT
+       SUM(due <= ? AND state != 'new') AS overdue,
+       -- Stability is the interval in days; a card with none is not scheduled
+       -- and costs nothing yet.
+       SUM(CASE WHEN state = 'review' AND stability >= 1 THEN 1.0 / stability ELSE 0 END) AS burden
+     FROM cards WHERE suspended = 0`,
+    [now],
+  )
+
+  const late = await db.select<{ days: number }>(
+    `SELECT (? - due) / ${DAY} AS days FROM cards
+      WHERE suspended = 0 AND state != 'new' AND due <= ?
+      ORDER BY days`,
+    [now, now],
+  )
+
+  const [time] = await db.select<{ ms: number }>(
+    `SELECT AVG(duration_ms) AS ms FROM reviews WHERE ts >= ? AND duration_ms > 0`,
+    [now - 30 * DAY],
+  )
+
+  const burden = row?.burden ?? 0
+  return {
+    overdue: row?.overdue ?? 0,
+    medianDaysLate: late.length ? Math.max(0, Math.round(late[late.length >> 1]!.days)) : 0,
+    burden,
+    dailyMs: burden * (time?.ms ?? 0),
+  }
+}
+
+/**
+ * Time in the app that was not spent answering cards.
+ *
+ * The heartbeat in `hooks/useActivity.ts` writes these rows; a session with one
+ * beat is a visit of under thirty seconds and contributes nothing, which is
+ * correct rather than a rounding error.
+ */
+export async function appTime(days = 7): Promise<{ appMs: number; reviewMs: number }> {
+  const since = Date.now() - days * DAY
+  const [app] = await db.select<{ ms: number }>(
+    `SELECT SUM(last_seen - started_at) AS ms FROM app_sessions WHERE started_at >= ?`,
+    [since],
+  )
+  const [review] = await db.select<{ ms: number }>(
+    `SELECT SUM(duration_ms) AS ms FROM reviews WHERE ts >= ?`,
+    [since],
+  )
+  return { appMs: app?.ms ?? 0, reviewMs: review?.ms ?? 0 }
+}
+
+const startOfDay = (ts: number) => new Date(new Date(ts).setHours(0, 0, 0, 0)).getTime()

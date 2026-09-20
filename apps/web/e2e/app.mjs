@@ -63,7 +63,17 @@ ws.addEventListener('message', (e) => {
   // say so out loud rather than letting it read as a failed assertion.
   if (m.method === 'Inspector.targetCrashed') console.log('[RENDERER CRASHED]')
   if (m.method === 'Runtime.executionContextsCleared') console.log('[context cleared]')
+  // A toast is how this app reports a failed write, and toasts vanish after a
+  // few seconds — long before a `until` gives up and photographs the page. So
+  // keep the last few console lines and print them with the timeout: without
+  // them, "the clone did not open" is indistinguishable from "the clone threw".
+  if (m.method === 'Runtime.consoleAPICalled') {
+    const text = m.params.args.map((a) => a.value ?? a.description ?? a.type).join(' ')
+    recent.push(`${m.params.type}: ${text.split('\n')[0]}`)
+    if (recent.length > 8) recent.shift()
+  }
 })
+const recent = []
 /**
  * A DevTools call, with a deadline.
  *
@@ -102,6 +112,24 @@ const ev = async (expr) => {
     return undefined
   }
 }
+/**
+ * Wait for an element, then click it.
+ *
+ * The bug this exists to stop: a screen's heading renders immediately and its
+ * list renders one async hop later, so `until('…heading…')` can pass while the
+ * buttons are still absent. A click at that moment finds nothing, throws a
+ * TypeError inside `ev`, and `ev` swallows it — leaving a ten-second wait for
+ * something that was never asked for, and a timeout that blames the wrong step.
+ * Waiting on the *thing being clicked* is the fix; the throw is the safety net.
+ */
+const clickSelector = async (selector, label) => {
+  await until(`!!document.querySelector(${JSON.stringify(selector)})`, label ?? selector)
+  const hit = await ev(
+    `(()=>{const el=document.querySelector(${JSON.stringify(selector)});if(!el)return false;el.click();return true})()`,
+  )
+  if (!hit) throw new Error(`${label ?? selector} vanished between waiting for it and clicking it`)
+}
+
 const until = async (expr, label, tries = 60) => {
   for (let i = 0; i < tries; i++) { if (await ev(expr)) return; await wait(250) }
   // A timeout that only says which label it was waiting for makes you re-run the
@@ -109,7 +137,8 @@ const until = async (expr, label, tries = 60) => {
   const where = await ev('location.pathname').catch(() => '?')
   const seen = (await ev('document.body.innerText').catch(() => '')) ?? ''
   throw new Error(
-    `timed out waiting for ${label}\n  at ${where}\n  page showed: ${JSON.stringify(seen.slice(0, 400))}`,
+    `timed out waiting for ${label}\n  at ${where}\n  page showed: ${JSON.stringify(seen.slice(0, 400))}`
+    + (recent.length ? `\n  console: ${recent.join('\n           ')}` : ''),
   )
 }
 /**
@@ -150,6 +179,38 @@ await send('Runtime.enable')
 await send('Inspector.enable')
 await send('Page.enable')
 await send('DOM.enable')
+
+/**
+ * Sign the browser in before the first byte of the app runs.
+ *
+ * The app requires an account now, and every `Page.navigate` below would
+ * otherwise land on `/sign-in`. Rather than drive the sign-up form ten times,
+ * seed what a signed-in browser actually holds: a token and the last user the
+ * server confirmed.
+ *
+ * This is not a bypass — it is the offline path, tested. `RequireAuth`
+ * deliberately does not ask the server who you are; it trusts a session this
+ * browser has already held, so that a dead network cannot lock somebody out of
+ * their own cards. With no API running at all, that is exactly the state below,
+ * and the suite passing is the assertion that the rule holds.
+ */
+const SESSION = {
+  'recall.token': 'e2e-token-never-sent-anywhere',
+  'recall.user': JSON.stringify({
+    id: '00000000-0000-4000-8000-000000000000',
+    name: 'E2E Runner',
+    email: 'e2e@example.invalid',
+    email_verified: true,
+    is_moderator: false,
+    onboarded: true,
+  }),
+}
+await send('Page.addScriptToEvaluateOnNewDocument', {
+  source: `try{${Object.entries(SESSION)
+    .map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)},${JSON.stringify(v)})`)
+    .join(';')}}catch{}`,
+})
+
 await send('Page.navigate', { url: URL_UNDER_TEST })
 
 // ── deck tree ──────────────────────────────────────────────────────────────
@@ -485,7 +546,21 @@ const openMenu = (label) => ev(`(()=>{const b=[...document.querySelectorAll('but
 const menuItem = (label) => ev(`(()=>{const m=[...document.querySelectorAll('[role=menuitem]')]
     .find(x=>x.textContent.includes(${JSON.stringify(label)}));if(m){m.click();return true}return false})()`)
 
-await click('New deck')
+// Several header buttons left the deck list for the shell's Create menu, so
+// reaching them is two steps now. Matched on an exact label, because the deck
+// dialog's own submit button also begins with "Create".
+const createMenu = async (label) => {
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Create');
+    if(!b)return false;
+    b.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,isPrimary:true}));
+    b.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,isPrimary:true}));
+    b.click();return true})()`)
+  await until(`document.querySelectorAll('[role=menuitem]').length > 0`, 'create menu')
+  await menuItem(label)
+}
+const newDeck = () => createMenu('New deck')
+
+await newDeck()
 await until(`!!document.getElementById('deck-name')`, 'deck dialog')
 await setInput('deck-name', 'Biochemistry')
 await wait(200)
@@ -495,7 +570,7 @@ await wait(600)
 ok((await deckNames()).includes('Biochemistry'), 'a deck can be created')
 
 // `::` is Anki's path separator, so it cannot live inside one deck's name.
-await click('New deck')
+await newDeck()
 await until(`!!document.getElementById('deck-name')`, 'deck dialog 2')
 await setInput('deck-name', 'Heart::Valves')
 await until(`document.body.innerText.includes('separates')`, 'separator warning')
@@ -507,7 +582,7 @@ ok(named.includes('Heart Valves') && !named.includes('Heart::Valves'),
    'a name carrying :: becomes one deck, not two')
 
 // Sibling names are unique, or an Anki path could not resolve to one deck.
-await click('New deck')
+await newDeck()
 await until(`!!document.getElementById('deck-name')`, 'deck dialog 3')
 await setInput('deck-name', 'Biochemistry')
 await wait(200)
@@ -578,10 +653,10 @@ ok(await ev(`document.body.innerText.includes('Half-life of aspirin')`),
 section('note type management')
 await click('All decks')
 await until(`document.body.innerText.includes('Study now')`, 'deck list')
-await click('Note types')
+await createMenu('Note types')
 await until(`document.body.innerText.includes('What fields a note has')`, 'note types')
 
-await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='Clone Basic');b.click();return true})()`)
+await clickSelector('[aria-label="Clone Basic"]', 'the note type list')
 await until(`!!document.querySelector('[aria-label="Field 1 name"]')`, 'the clone opened')
 ok(await ev(`document.querySelector('input').value.includes('Basic copy')`),
    'cloning a built-in gives an editable copy')
@@ -645,7 +720,7 @@ const exported = async () => {
 }
 
 const waitingBefore = await ev(`document.body.innerText.match(/(\\d+) cards waiting/)?.[1] ?? '0'`)
-await click('Export')
+await createMenu('Export .apkg')
 const first = await exported()
 ok(!!first, `export reported its contents (${JSON.stringify(first)})`)
 ok(!!first && first.reviews > 0, 'the review history went into the file')
@@ -683,7 +758,7 @@ await until(`document.body.innerText.includes('Study now')`, 'deck list again')
 // review check is the one with teeth — an answer that arrives back under a new
 // id is a second row for a moment that only happened once.
 await wait(4500) // let the first toast clear, or its text is read again
-await click('Export')
+await createMenu('Export .apkg')
 const second = await exported()
 ok(!!second && first && second.notes === first.notes && second.cards === first.cards,
    `notes and cards are stable (${JSON.stringify(second)})`)

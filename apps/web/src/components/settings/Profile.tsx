@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import { Avatar, AvatarArt, AVATARS, initials } from '@/components/Avatar'
 import { useAuth } from '@/lib/auth'
+import { cn } from '@/lib/utils'
 import { paths } from '@/routes/paths'
 import {
   collectionCounts, eraseLocalCollection, type CollectionCounts,
@@ -47,36 +49,245 @@ export function Profile() {
   }
 
   return (
-    <div className="space-y-6">
-      <dl className="grid gap-4 sm:grid-cols-[8rem_1fr]">
-        <dt className="text-sm text-muted-foreground">Name</dt>
-        <dd className="text-sm">{user.name}</dd>
-        <dt className="text-sm text-muted-foreground">Email</dt>
-        <dd className="flex flex-wrap items-center gap-2 text-sm">
-          {user.email}
-          {user.email_verified ? (
-            <Badge variant="outline" className="text-hematoxylin">Verified</Badge>
-          ) : (
-            <Badge variant="outline" className="text-eosin">Unverified</Badge>
-          )}
-        </dd>
-        <dt className="text-sm text-muted-foreground">Sync</dt>
-        <dd className="text-sm">
-          {status === 'synced' ? 'Up to date with the server' : 'Paused — reviews are queueing on this device'}
-        </dd>
-      </dl>
+    <div className="space-y-10">
+      <AvatarPicker />
+      <Identity />
+      <PasswordChange />
 
-      {!user.email_verified && (
+      <div className="space-y-3 border-t border-border pt-6">
         <p className="text-sm text-muted-foreground">
-          Unverified accounts sync normally. Verification only gates publishing a deck to the
-          marketplace.
+          {status === 'synced'
+            ? 'Up to date with the server.'
+            : 'Sync paused — reviews are queueing on this device.'}
         </p>
-      )}
-
-      <Button variant="outline" onClick={() => setSigningOut(true)}>Sign out</Button>
+        <Button variant="outline" onClick={() => setSigningOut(true)}>Sign out</Button>
+      </div>
 
       <SignOutDialog open={signingOut} onOpenChange={setSigningOut} />
     </div>
+  )
+}
+
+/**
+ * Pick a face.
+ *
+ * Saves on click rather than behind a button: there is one field, the choice is
+ * visible in the result, and a Save button for a picture is a step that exists
+ * only to be forgotten. The bar's avatar updates in the same instant because
+ * `refreshUser` rewrites the session the whole app reads.
+ */
+function AvatarPicker() {
+  const { user, client, refreshUser } = useAuth()
+  const [saving, setSaving] = useState<string | null>(null)
+
+  async function choose(key: string | null) {
+    setSaving(key ?? 'none')
+    try {
+      await client.updateProfile({ avatar: key })
+      await refreshUser()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-3">
+        <Avatar user={user!} className="size-12" />
+        <div>
+          <p className="text-sm font-medium">Your picture</p>
+          <p className="text-xs text-muted-foreground">
+            Drawn, not uploaded — nothing leaves this device but the name of the one you pick.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {AVATARS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            disabled={!!saving}
+            aria-label={key}
+            aria-pressed={user!.avatar === key}
+            onClick={() => void choose(key)}
+            className={cn(
+              'size-11 overflow-hidden rounded-full ring-offset-2 ring-offset-background transition',
+              user!.avatar === key ? 'ring-2 ring-hematoxylin' : 'opacity-70 hover:opacity-100',
+            )}
+          >
+            <AvatarArt name={key} />
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={!!saving}
+          aria-label="Use my initials"
+          aria-pressed={!user!.avatar}
+          onClick={() => void choose(null)}
+          className={cn(
+            'grid size-11 place-items-center rounded-full bg-muted font-mono text-[0.625rem] tracking-wider text-muted-foreground ring-offset-2 ring-offset-background transition',
+            !user!.avatar ? 'ring-2 ring-hematoxylin' : 'opacity-70 hover:opacity-100',
+          )}
+        >
+          {initials(user!.name)}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Name and address.
+ *
+ * **Changing the address un-verifies it**, and the form says so before you
+ * change it rather than afterwards — the server does this deliberately, since
+ * the old confirmation was proof about a different mailbox, and finding out by
+ * losing the ability to publish is a bad way to learn it.
+ */
+function Identity() {
+  const { user, client, refreshUser } = useAuth()
+  const [form, setForm] = useState({ name: user!.name, email: user!.email })
+  const [busy, setBusy] = useState(false)
+
+  const dirty = form.name.trim() !== user!.name || form.email.trim() !== user!.email
+  const emailChanging = form.email.trim() !== user!.email
+
+  async function save() {
+    setBusy(true)
+    try {
+      await client.updateProfile({ name: form.name.trim(), email: form.email.trim() })
+      await refreshUser()
+      toast('Account updated')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="space-y-4 border-t border-border pt-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="profile-name">Name</Label>
+          <Input
+            id="profile-name"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="profile-email">Email</Label>
+          <Input
+            id="profile-email"
+            type="email"
+            autoComplete="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+          <p className="flex items-center gap-2 text-xs">
+            {user!.email_verified ? (
+              <Badge variant="outline" className="text-hematoxylin">Verified</Badge>
+            ) : (
+              <Badge variant="outline" className="text-eosin">Unverified</Badge>
+            )}
+            <span className="text-muted-foreground">
+              {emailChanging
+                ? 'Changing this makes it unverified again.'
+                : 'Verification only gates publishing to the marketplace.'}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <Button disabled={!dirty || busy} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save changes'}
+        </Button>
+        {dirty && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => setForm({ name: user!.name, email: user!.email })}
+          >
+            Cancel
+          </Button>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Change the password, proving the old one.
+ *
+ * The current password is asked for even though the request is already
+ * authenticated: a bearer token is something a borrowed laptop has, and this is
+ * the one change that would lock its owner out of their own account.
+ */
+function PasswordChange() {
+  const { client } = useAuth()
+  const [form, setForm] = useState({ current: '', next: '', confirm: '' })
+  const [busy, setBusy] = useState(false)
+
+  const mismatch = form.confirm.length > 0 && form.next !== form.confirm
+  const ready = form.current && form.next.length >= 8 && form.next === form.confirm
+
+  async function change() {
+    setBusy(true)
+    try {
+      await client.changePassword({ current_password: form.current, password: form.next })
+      setForm({ current: '', next: '', confirm: '' })
+      toast('Password changed. Your other devices stay signed in.')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="space-y-4 border-t border-border pt-6">
+      <div>
+        <p className="text-sm font-medium">Password</p>
+        <p className="text-xs text-muted-foreground">
+          Your other devices keep their sessions — sign them out from Devices if you need to.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="pw-current">Current</Label>
+          <Input
+            id="pw-current" type="password" autoComplete="current-password"
+            value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pw-next">New</Label>
+          <Input
+            id="pw-next" type="password" autoComplete="new-password"
+            value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pw-confirm">Repeat</Label>
+          <Input
+            id="pw-confirm" type="password" autoComplete="new-password"
+            value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+            aria-invalid={mismatch}
+          />
+          {mismatch && <p className="text-xs text-eosin">These do not match.</p>}
+        </div>
+      </div>
+
+      <Button variant="outline" disabled={!ready || busy} onClick={() => void change()}>
+        {busy ? 'Changing…' : 'Change password'}
+      </Button>
+    </section>
   )
 }
 

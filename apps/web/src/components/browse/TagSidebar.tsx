@@ -24,7 +24,14 @@ export function TagSidebar({
   onPick: (tag: string | null) => void
 }) {
   return (
-    <nav aria-label="Tags" className="w-52 shrink-0 space-y-4 text-sm">
+    // Sticky, and scrollable in its own right: the card list runs to thousands
+    // of rows and the filters are how you get out of them, so reaching row 400
+    // must not mean scrolling back to row 1 to change the filter. `top-14`
+    // clears the app bar, which is sticky too.
+    <nav
+      aria-label="Tags"
+      className="sticky top-14 h-[calc(100dvh-4.5rem)] w-52 shrink-0 space-y-4 overflow-y-auto pt-4 pr-1 text-sm"
+    >
       <div>
         <p className={LABEL}>Saved</p>
         <Row icon={<Layers />} label="All cards" active={!active} onClick={() => onPick(null)} />

@@ -52,7 +52,7 @@ export function ListingPage() {
 
   if (error) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-3 px-6">
+      <div className="mx-auto flex max-w-md flex-col justify-center gap-3 py-20">
         <h1 className="font-display text-3xl">Can't load this deck</h1>
         <p className="text-sm text-muted-foreground">
           Published decks live on the server. Your own collection is unaffected.
@@ -67,7 +67,7 @@ export function ListingPage() {
 
   if (!data) {
     return (
-      <div className="mx-auto min-h-dvh max-w-3xl space-y-4 px-4 py-10 sm:px-6">
+      <div className="mx-auto max-w-3xl space-y-4">
         <Skeleton className="h-10 w-72" />
         <Skeleton className="h-4 w-48" />
         <Skeleton className="h-72 w-full" />
@@ -80,7 +80,7 @@ export function ListingPage() {
   const latest = versions.find((v) => v.version === listing.latest_version)
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-3xl">
       <Button variant="ghost" size="sm" className="-ml-2 mb-6" asChild>
         <Link to={paths.marketplace}>← Explore</Link>
       </Button>

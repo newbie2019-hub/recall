@@ -161,9 +161,19 @@ test('the day buckets and the hour buckets both come back fully populated', asyn
 
 test('a leech arrives with the reason, and the reason names the sibling', async () => {
   const rows = await stats.leeches()
-  assert.equal(rows.length, 1, 'only the reverse-confused card crosses the threshold')
-  const [l] = rows
-  assert.equal(l!.card_id, 'n1:0')
+
+  // Both sides of note n1 are leeches, and that is the finding: ten failures on
+  // one face and six on the other, at two-day gaps the scheduler expected them
+  // to survive. The old lapse threshold of 8 saw only the first, which is
+  // precisely the card whose *sibling* is the reason it keeps failing.
+  assert.deepEqual(rows.map((r) => r.card_id).sort(), ['n1:0', 'n1:1'])
+
+  // The healthy card is the regression guard: twelve passes and one mature
+  // failure is a card behaving exactly as designed at 90% retention, and a
+  // count-based rule that flagged it would suspend somebody's working card.
+  assert.ok(!rows.some((r) => r.card_id === 'n2:0'), 'a card failing as predicted is not a leech')
+
+  const l = rows.find((r) => r.card_id === 'n1:0')
   assert.equal(l!.deck, 'Thorax')
   assert.equal(l!.preview, 'Mitral valve', 'markup stripped for the list')
   // Ten, from the log — not the twenty a same-day relearning burst would give,
@@ -171,30 +181,35 @@ test('a leech arrives with the reason, and the reason names the sibling', async 
   assert.equal(l!.verdict.lapses, 10)
   assert.equal(l!.verdict.reason?.code, 'confused-with-sibling')
   assert.equal(l!.verdict.reason?.sibling, 'n1:1')
+  assert.ok(l!.verdict.surprise! < 0.01, 'flagged because the failures were improbable')
 })
 
-test('the scheduler check fires only on a firing count', async () => {
-  // 10 lapses: past the threshold of 8, but not 8 or 12, so nothing is written.
-  const quiet = await stats.checkLeech('n1:0', 'n1')
-  assert.equal(quiet?.leech, true)
-  assert.equal(quiet?.fires, false)
-  const [untouched] = await db.select<{ tags: string }>(`SELECT tags FROM notes WHERE id = 'n1'`)
-  assert.ok(!untouched!.tags.includes('leech'), 'a non-firing count writes nothing')
+test('the scheduler check judges a card against what was predicted for it', async () => {
+  // The healthy card first: one mature failure in thirteen reviews at 90%
+  // retention is the scheduler working, not a leech. This is the assertion that
+  // fails the moment anyone puts a lapse count back in charge.
+  assert.equal(await stats.checkLeech('n2:0', 'n2'), null, 'a card failing as predicted is left alone')
 
-  // At the threshold itself it fires, and the reason survives the round trip.
-  const fired = await stats.checkLeech('n1:0', 'n1', { threshold: 10 })
-  assert.equal(fired?.fires, true)
-  assert.equal(fired?.reason?.code, 'confused-with-sibling')
-  const [tagged] = await db.select<{ tags: string; suspended?: number }>(
-    `SELECT tags FROM notes WHERE id = 'n1'`,
+  const verdict = await stats.checkLeech('n1:0', 'n1')
+  assert.equal(verdict?.leech, true)
+  assert.ok(verdict!.surprise! < 0.01, 'ten failures at two-day gaps are not chance')
+  assert.equal(verdict?.reason?.code, 'confused-with-sibling')
+
+  // Firing steps, so an unsuspended leech is not re-suspended on its very next
+  // failure. Whichever way this call lands, the write must match the verdict.
+  const [note] = await db.select<{ tags: string }>(`SELECT tags FROM notes WHERE id = 'n1'`)
+  assert.equal(
+    note!.tags.split(' ').includes('leech'),
+    verdict!.fires,
+    'the tag is written exactly when the verdict fires',
   )
-  assert.ok(tagged!.tags.split(' ').includes('leech'))
+
   sqlite.exec(`UPDATE notes SET tags = 'anatomy::thorax::valves anatomy::thorax' WHERE id = 'n1'`)
   sqlite.exec(`UPDATE cards SET suspended = 0 WHERE id = 'n1:0'`)
 })
 
 test('applying a leech writes the reserved tag once and suspends the card', async () => {
-  const [l] = await stats.leeches()
+  const l = (await stats.leeches()).find((r) => r.card_id === 'n1:0')
   await stats.applyLeech(l!)
   await stats.applyLeech(l!) // idempotent — a second run must not double-tag
 

@@ -18,6 +18,7 @@ import { Pomodoro } from './Pomodoro'
 import { AudioAutoplay } from './AudioAutoplay'
 import { RATING_SFX, sfx } from '@/lib/sfx'
 import * as repo from '@/db/repo'
+import { stopwatch, type Stopwatch } from '@/lib/stopwatch'
 import { answerCard } from '@/db/queries/filtered'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { previewIntervals, type RatingValue } from '@recall/core'
@@ -29,8 +30,13 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
   const [revealed, setRevealed] = useState(false)
   const [typed, setTyped] = useState('')
   const [loading, setLoading] = useState(true)
-  const shownAt = useRef(Date.now())
+  // Not `Date.now() - shownAt`: that counts lunch breaks, background tabs and
+  // the ten minutes a card sat on screen while somebody took a phone call.
+  // `stopwatch` stops for all three, and `recordReview` caps what is left.
+  const clock = useRef<Stopwatch | null>(null)
   const typeBox = useRef<HTMLInputElement>(null)
+
+  useEffect(() => () => clock.current?.stop(), [])
 
   const paint = useCallback(
     (card: repo.StudyCard, answer: string) =>
@@ -52,7 +58,8 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
     setRevealed(false)
     setTyped('')
     setLoading(false)
-    shownAt.current = Date.now()
+    clock.current?.stop()
+    clock.current = stopwatch()
   }, [deckId, paint])
 
   useEffect(() => {
@@ -91,7 +98,7 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
       busy.current = true
       answered.current = true
       try {
-        await answerCard(sc, rating, Date.now() - shownAt.current)
+        await answerCard(sc, rating, clock.current?.elapsed() ?? 0)
         await load()
       } finally {
         busy.current = false

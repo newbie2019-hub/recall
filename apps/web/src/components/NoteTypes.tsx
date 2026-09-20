@@ -125,7 +125,7 @@ export function NoteTypes({ decks, onBack }: { decks: repo.DeckRow[]; onBack: ()
 
   if (!draft || !selected)
     return (
-      <div className="mx-auto min-h-dvh max-w-2xl px-4 py-10 sm:px-6">
+      <div className="mx-auto max-w-2xl">
         <Button variant="ghost" size="sm" className="-ml-2 mb-6" onClick={onBack}>
           <ChevronLeft /> Decks
         </Button>
@@ -171,7 +171,7 @@ export function NoteTypes({ decks, onBack }: { decks: repo.DeckRow[]; onBack: ()
   const single = draft.kind !== 'standard'
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-3xl">
       <Button variant="ghost" size="sm" className="-ml-2 mb-6"
               onClick={() => { setSelected(null); setDraft(null) }}>
         <ChevronLeft /> Note types

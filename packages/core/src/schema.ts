@@ -235,6 +235,36 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE decks ADD COLUMN source_listing_id TEXT;
   ALTER TABLE decks ADD COLUMN source_version    INTEGER;
   `,
+
+  // 8 - measurement: an answer time that can be trusted, and time in the app
+  `
+  -- Anki's "maximum answer seconds", and for the same reason: \`duration_ms\`
+  -- is wall-clock from card-shown to rating-pressed, so a card left open over
+  -- lunch is logged as forty-seven minutes of study. Every median and every
+  -- per-deck total inherits that, which makes this the column the whole stats
+  -- screen rests on. Per deck because the right ceiling differs — a cloze
+  -- paragraph takes longer to read than a vocabulary card.
+  ALTER TABLE decks ADD COLUMN max_answer_seconds INTEGER NOT NULL DEFAULT 60;
+
+  -- Time in the app that is not reviewing: browsing, editing, reading the
+  -- dashboard. Nothing already stored implies it, and the difference between
+  -- "40 minutes in the app" and "12 minutes reviewing" is itself worth seeing.
+  --
+  -- A heartbeat rather than an \`ended_at\`, because there is no reliable event
+  -- for "the tab went away" — a crash, a force-quit or a lost battery all skip
+  -- \`beforeunload\`. Writing \`last_seen\` every half minute costs at most that
+  -- much accuracy and never leaves a session open forever.
+  --
+  -- Local only, and deliberately not in the sync payload: this is a number for
+  -- the person's own dashboard, not something to ship to a server.
+  CREATE TABLE app_sessions (
+    id         TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    route      TEXT
+  );
+  CREATE INDEX idx_app_sessions_started ON app_sessions(started_at);
+  `,
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

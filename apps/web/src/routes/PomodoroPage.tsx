@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Coffee, Square, Timer } from 'lucide-react'
+import { Timer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useFocus } from '@/components/FocusTimer'
 import { collectionReady } from '@/db/boot'
 import { focusBlocks, type FocusBlock } from '@/db/queries/pomodoro'
 import { formatClock, usePomodoro } from '@/hooks/usePomodoro'
 import { paths } from './paths'
 
 /**
- * The focus timer's own screen — the same hook the study-header widget uses,
- * given room, plus the thing the table was added for: what the last few focus
- * blocks did to accuracy.
+ * What the last few focus blocks actually did to accuracy.
+ *
+ * The timer itself is a dialog and a bar (`components/FocusTimer.tsx`) — a
+ * block exists so you can go and study, and controls that live only on their
+ * own screen mean watching a clock instead of working. This page is the
+ * record, which is the part that needs room.
  *
  * Blocks with no reviews in them are still listed. "I sat down for 25 minutes
  * and answered four cards" is the most useful row on this page.
@@ -23,7 +27,8 @@ const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-di
 
 export function PomodoroPage() {
   const navigate = useNavigate()
-  const { session, remaining, progress, finished, start, stop, dismiss } = usePomodoro()
+  const { session, remaining, progress } = usePomodoro()
+  const focus = useFocus()
   const [blocks, setBlocks] = useState<FocusBlock[] | null>(null)
 
   const reload = useCallback(async () => {
@@ -39,7 +44,7 @@ export function PomodoroPage() {
   const reviewed = todays.reduce((s, b) => s + b.reviews, 0)
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-2xl">
       <header className="mb-10">
         <h1 className="font-display text-5xl tracking-tight">Focus</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -49,49 +54,25 @@ export function PomodoroPage() {
         </p>
       </header>
 
-      <section className="mb-12 flex flex-col items-center gap-5 border-y border-border py-12">
-        <span
-          className="font-mono text-7xl tabular-nums"
-          // The whole clock re-reads on every repaint, which a screen reader
-          // would announce once a second. It is decorative; the button is not.
-          aria-hidden
-        >
+      <section className="mb-12 flex flex-col items-center gap-4 border-y border-border py-12">
+        <span className="font-mono text-7xl tabular-nums" aria-hidden>
           {session ? formatClock(remaining) : '25:00'}
         </span>
-
         {session && (
           <span className="h-1 w-56 overflow-hidden rounded-full bg-border" aria-hidden>
-            <span
-              className="block h-full bg-hematoxylin"
-              style={{ width: `${progress * 100}%` }}
-            />
+            <span className="block h-full bg-hematoxylin" style={{ width: `${progress * 100}%` }} />
           </span>
         )}
-
-        {session ? (
-          <Button variant="outline" onClick={stop}>
-            <Square /> Stop {session.kind === 'break' ? 'break' : 'focus block'}
+        {/* The controls live in the dialog now, and so does the bar that keeps
+            the time on every other screen. This page is the history. */}
+        <div className="flex gap-2">
+          <Button onClick={focus.open}>
+            <Timer /> {session ? 'Open timer' : 'Start focus'}
           </Button>
-        ) : finished ? (
-          <div className="flex gap-2">
-            <Button onClick={() => void start(finished === 'focus' ? 'break' : 'focus')}>
-              {finished === 'focus' ? <Coffee /> : <Timer />}
-              {finished === 'focus' ? 'Take five' : 'Back to work'}
-            </Button>
-            <Button variant="ghost" onClick={dismiss}>
-              Not now
-            </Button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <Button onClick={() => void start('focus')}>
-              <Timer /> Start focus
-            </Button>
-            <Button variant="outline" onClick={() => navigate(paths.study())}>
-              Study
-            </Button>
-          </div>
-        )}
+          <Button variant="outline" onClick={() => navigate(paths.study())}>
+            Study
+          </Button>
+        </div>
       </section>
 
       <h2 className="mb-2 font-display text-xl">Last seven days</h2>

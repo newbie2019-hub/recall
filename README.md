@@ -68,10 +68,19 @@ card type engine, Anki import and export, the Laravel backend with auth and
 sync, the dashboard and card browser, filtered decks, the public marketplace
 with day-one moderation, and live co-editing over Reverb.
 
+**An account is now required.** A fresh browser lands on sign-in, then on a
+six-question welcome survey. What has not changed is the rule underneath it: a
+*failed* sign-in is never a wall. The guard asks whether this browser has ever
+held a confirmed session, so an expired token or a dead network leaves you
+studying with the banner showing `sync paused`. Only signing out puts the wall
+back. `/explore`, a listing and `/legal` stay open to anyone — a shared deck is
+handed to people who do not have an account yet.
+
 Next: **the media transport** — `POST`/`GET /media/{sha256}` for an account's
 own bytes, plus a per-version manifest so a published or shared deck carries its
 images. It is the oldest unpaid item in the plan and it is what stands between
 this and the medical vertical it is aimed at: today a deck of plates publishes,
 clones and co-edits perfectly and arrives blank. After that, **Phase 10 — AI
-card generation.** See [PHASES.md](PHASES.md), [PLAN.md](PLAN.md) and
-[CRITIQUE.md](CRITIQUE.md), which scores the build rather than the plan.
+card generation**, designed in [AI.md](AI.md). See [PHASES.md](PHASES.md),
+[PLAN.md](PLAN.md) and [CRITIQUE.md](CRITIQUE.md), which scores the build rather
+than the plan.

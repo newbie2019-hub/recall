@@ -147,7 +147,7 @@ export function BrowsePage() {
   const pages = Math.max(1, Math.ceil(total / PAGE))
 
   return (
-    <main className="mx-auto min-h-dvh max-w-7xl px-4 py-8 sm:px-6">
+    <main className="mx-auto w-full max-w-7xl">
       <header className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-display text-4xl tracking-tight">Browse</h1>
         <div className="flex items-center gap-3">

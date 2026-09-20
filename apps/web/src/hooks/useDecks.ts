@@ -12,7 +12,19 @@ import { collectionReady } from '@/db/boot'
  *
  * Opening and seeding stays in `db/boot`, once per page load. Doing it here
  * would repeat the whole migration-and-seed path on every navigation.
+ *
+ * Two screens now hold the tree at once — the shell's Create menu and whatever
+ * page is under it — so a deck made from the shell has to reach the list
+ * beneath it. `refreshDecks()` is the whole mechanism: a set of listeners and a
+ * loop. A store would be the same thing with a library around it.
  */
+const listeners = new Set<() => void>()
+
+/** Re-run every mounted `useDecks`. Call after anything writes to `decks`. */
+export function refreshDecks(): void {
+  for (const listener of listeners) listener()
+}
+
 export function useDecks() {
   const [decks, setDecks] = useState<repo.DeckRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +41,12 @@ export function useDecks() {
   }, [])
 
   useEffect(() => void reload(), [reload])
+
+  useEffect(() => {
+    const listener = () => void reload()
+    listeners.add(listener)
+    return () => void listeners.delete(listener)
+  }, [reload])
 
   return { decks, error, reload }
 }

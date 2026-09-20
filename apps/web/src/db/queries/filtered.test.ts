@@ -100,6 +100,7 @@ const studyCard = (): StudyCard => {
     note: { id: 'n1', note_type: 'basic', deck_id: 'home', fields: {}, tags: [], fma_id: null, updated_at: 0 },
     noteType: { id: 'basic', name: 'Basic', fields: [], templates: [], css: '', kind: 'standard' } as never,
     deckPath: 'Exam',
+    maxAnswerSeconds: 60,
     deckName: 'Exam',
     // What nextCard would hand over: the *filtered* deck's target, not home's.
     retentionTarget: 0.9,

@@ -8,7 +8,9 @@ use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\ImportController;
 use App\Http\Controllers\Api\V1\ListingController;
 use App\Http\Controllers\Api\V1\ModerationController;
+use App\Http\Controllers\Api\V1\OnboardingController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
+use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\SyncController;
 use App\Models\Listing;
 use Illuminate\Http\Request;
@@ -46,6 +48,22 @@ Route::post('auth/reset-password', [PasswordResetController::class, 'reset'])
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
     Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
+
+    // The welcome wizard. An upsert, so a reload on the last screen is free;
+    // throttled loosely because a wizard is submitted once and a retry is the
+    // only realistic second call.
+    // The account behind the session, as opposed to the session itself.
+    Route::patch('auth/profile', [ProfileController::class, 'update'])
+        ->middleware('throttle:20,1')
+        ->name('auth.profile');
+    // Throttled like a credential endpoint, because it is one.
+    Route::put('auth/password', [ProfileController::class, 'password'])
+        ->middleware('throttle:5,1')
+        ->name('auth.password');
+
+    Route::put('onboarding', [OnboardingController::class, 'update'])
+        ->middleware('throttle:20,1')
+        ->name('onboarding.update');
 
     // Deleting the account asks for the password again, so it is throttled
     // like a credential endpoint rather than like a normal authenticated call.

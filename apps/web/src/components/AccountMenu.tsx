@@ -6,6 +6,8 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Avatar } from '@/components/Avatar'
+import { useFocus } from '@/components/FocusTimer'
 import { useAuth, type SyncStatus } from '@/lib/auth'
 import { paths } from '@/routes/paths'
 
@@ -20,11 +22,14 @@ import { paths } from '@/routes/paths'
  * together for the same reason: "who am I" and "is my work safe" are one
  * question here.
  *
- * Signed out it is a plain link to sign-in. Never a redirect, never a wall —
- * this component is the *only* way into the auth pages from the app.
+ * Signed out it is a plain link to sign-in. It is no longer the *only* way into
+ * the auth pages — `RequireAuth` sends people there now — but it is still the
+ * only one on the public marketplace screens, which a visitor can reach with no
+ * account at all.
  */
 export function AccountMenu() {
   const { user, status, loading } = useAuth()
+  const focus = useFocus()
 
   // Reserving the space stops the header jumping when the stored token resolves.
   if (loading) return <Skeleton className="h-9 w-40" />
@@ -43,25 +48,23 @@ export function AccountMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex max-w-[15rem] items-center gap-2 rounded-md border border-border px-2 py-1 text-left hover:bg-accent"
+          className="flex max-w-[18rem] items-center gap-2.5 rounded-md py-1 text-left"
           aria-label={`Signed in as ${user.email} — ${SYNC[status].label}`}
         >
-          <span
-            aria-hidden
-            className="grid size-7 shrink-0 place-items-center rounded-full bg-muted font-mono text-[0.625rem] tracking-wider text-muted-foreground"
-          >
-            {initials(user.name)}
-          </span>
-          <span className="min-w-0 leading-tight">
-            <span className="flex items-center gap-1.5">
+          {/* Name and address sit *before* the avatar and carry no chrome of
+              their own — the bar already has a border, and a second box drawn
+              inside it made the account look like a button among buttons when
+              it is really a statement of fact. */}
+          <span className="hidden min-w-0 text-right leading-tight sm:block">
+            <span className="flex items-center justify-end gap-1.5">
               <span className="truncate text-xs font-medium">{user.name}</span>
               <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${SYNC[status].dot}`} />
             </span>
-            {/* Always on screen, never only inside the open menu. */}
             <span className="block truncate text-[0.6875rem] text-muted-foreground">
               {user.email}
             </span>
           </span>
+          <Avatar user={user} className="size-8" />
         </button>
       </DropdownMenuTrigger>
 
@@ -72,6 +75,10 @@ export function AccountMenu() {
           <span className={`text-xs font-normal ${SYNC[status].text}`}>{SYNC[status].label}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={focus.open}>Focus timer</DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to={paths.pomodoro}>Focus history</Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to={paths.settings()}>Settings</Link>
         </DropdownMenuItem>
@@ -102,17 +109,4 @@ const SYNC: Record<SyncStatus, { label: string; dot: string; text: string }> = {
   synced: { label: 'Synced', dot: 'bg-hematoxylin', text: 'text-hematoxylin' },
   paused: { label: 'Sync paused — nothing lost', dot: 'bg-eosin', text: 'text-eosin' },
   'local-only': { label: 'On this device only', dot: 'bg-muted-foreground', text: 'text-muted-foreground' },
-}
-
-function initials(name: string): string {
-  const letters = name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => [...part][0] ?? '')
-    .join('')
-
-  // An account named with an emoji or a single glyph still needs something in
-  // the circle, and a blank one reads as "not signed in".
-  return letters.toUpperCase() || '·'
 }

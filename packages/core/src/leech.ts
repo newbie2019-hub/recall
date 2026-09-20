@@ -11,6 +11,9 @@
  * Pure, and deliberately so: the web dashboard and the RN app both call it, and
  * neither passes a database handle.
  */
+import {
+  LEECH_ALPHA, replayWithRetrievability, surpriseOverTime,
+} from './memory.ts'
 import type { Card, Review } from './types.ts'
 
 export const LEECH_TAG = 'leech'
@@ -22,11 +25,24 @@ const MATURE = 21 * DAY
 export type LeechAction = 'suspend' | 'flag'
 
 export interface LeechOptions {
-  /** Failed recall tests before a card is called a leech. Anki's default. */
+  /**
+   * Failed recall tests before a card is called a leech.
+   *
+   * Only the fallback now — see `detectLeech`. Kept because a collection
+   * imported from Anki carries this number, and because the statistical test
+   * needs a scheduling target it does not always have.
+   */
   threshold: number
   action: LeechAction
   /** Flag written when `action` is 'flag'. 1 is the red flag in the UI. */
   flag: number
+  /**
+   * The deck's desired retention. Supplying it switches on the interval-adjusted
+   * test; without it the lapse count is all there is to go on.
+   */
+  retentionTarget?: number
+  /** When the card was made, so the replay starts where the card did. */
+  createdAt?: number
 }
 
 export const DEFAULT_LEECH: LeechOptions = { threshold: 8, action: 'suspend', flag: 1 }
@@ -48,6 +64,11 @@ export interface LeechReason {
 
 export interface LeechVerdict {
   leech: boolean
+  /**
+   * How improbable this card's failures are given what the model predicted for
+   * each one. Null when the count rule was used instead. See `detectLeech`.
+   */
+  surprise: number | null
   /**
    * True only on a firing count — the threshold itself, then every half
    * threshold after. Anki does this so an unsuspended leech is not re-suspended
@@ -109,15 +130,14 @@ export function detectLeech(
   const passed = tests.filter((t) => t.rating > 1)
   const lapses = failed.length
 
-  const step = Math.max(1, Math.ceil(opts.threshold / 2))
-  const leech = lapses >= opts.threshold
-  const fires = leech && (lapses - opts.threshold) % step === 0
+  const { leech, fires, surprise } = trigger(card, history, lapses, opts)
 
   if (!leech)
-    return { leech: false, fires: false, lapses, reason: null, tag: null, suspend: false, flag: null }
+    return { leech: false, surprise, fires: false, lapses, reason: null, tag: null, suspend: false, flag: null }
 
   return {
     leech: true,
+    surprise,
     fires,
     lapses,
     reason: reasonFor(card, tests, failed, passed, siblings, opts),
@@ -125,6 +145,61 @@ export function detectLeech(
     suspend: opts.action === 'suspend',
     flag: opts.action === 'flag' ? opts.flag : null,
   }
+}
+
+/**
+ * Is this card failing more than the scheduler expected it to?
+ *
+ * **A lapse count cannot answer that**, which is the flaw in Anki's rule and in
+ * this file until now. At 90% desired retention every card is *supposed* to
+ * fail about one review in ten: eight lapses in eighty is a card behaving
+ * exactly as designed, and eight in eleven is a card that needs rewriting. The
+ * threshold suspends the first and takes eight failures to notice the second.
+ *
+ * Replaying the log gives the retrievability the model predicted before each
+ * answer, so failures become a Poisson-binomial and the question becomes
+ * `P(failures ≥ observed) < 1%` — which usually fires within two or three bad
+ * reviews and never fires on a healthy card at all.
+ *
+ * `fires` still steps, so an unsuspended leech is not re-suspended on its very
+ * next failure. It is measured from the review where the card *became*
+ * improbable rather than from a fixed count, because with a statistical test
+ * there is no count to measure from.
+ *
+ * Falls back to the count when no retention target is supplied — an imported
+ * collection has lapse counts and nothing to replay against.
+ */
+function trigger(
+  card: Pick<Card, 'id' | 'ord'>,
+  history: Review[],
+  lapses: number,
+  opts: LeechOptions,
+): { leech: boolean; fires: boolean; surprise: number | null } {
+  const step = Math.max(1, Math.ceil(opts.threshold / 2))
+
+  if (opts.retentionTarget === undefined) {
+    const leech = lapses >= opts.threshold
+    return { leech, fires: leech && (lapses - opts.threshold) % step === 0, surprise: null }
+  }
+
+  const created = opts.createdAt ?? Math.min(...history.map((r) => r.ts), Date.now())
+  const { reviews } = replayWithRetrievability(
+    { id: card.id, note_id: card.id.split(':')[0] ?? card.id, ord: card.ord },
+    history,
+    opts.retentionTarget,
+    created,
+  )
+
+  const running = surpriseOverTime(reviews)
+  const onset = running.findIndex((r) => r.p < LEECH_ALPHA)
+  const surprise = running.length ? running[running.length - 1]!.p : 1
+
+  if (onset === -1) return { leech: false, fires: false, surprise }
+
+  // Failures accumulated since the card first became improbable. Zero means
+  // this very review is the one that tipped it, which is when to speak up.
+  const sinceOnset = (running[running.length - 1]!.failures) - running[onset]!.failures
+  return { leech: true, fires: sinceOnset % step === 0, surprise }
 }
 
 function reasonFor(

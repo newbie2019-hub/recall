@@ -98,7 +98,7 @@ export function PublishPage() {
 
   if (!decks || !exposed) {
     return (
-      <div className="mx-auto min-h-dvh max-w-2xl space-y-4 px-4 py-10 sm:px-6">
+      <div className="mx-auto max-w-2xl space-y-4">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -136,7 +136,7 @@ export function PublishPage() {
   const ready = form.title.trim() !== '' && rights !== ''
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-2xl">
       <Button variant="ghost" size="sm" className="-ml-2 mb-6" asChild>
         <Link to={paths.deck(deck.id)}>← {deck.name}</Link>
       </Button>
@@ -370,7 +370,7 @@ const Stat = ({ label, value }: { label: string; value: string }) => (
 const Gate = ({
   title, action, children,
 }: { title: string; action?: React.ReactNode; children: React.ReactNode }) => (
-  <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-3 px-6">
+  <div className="mx-auto flex max-w-md flex-col justify-center gap-3 py-20">
     <h1 className="font-display text-3xl">{title}</h1>
     <p className="text-sm text-muted-foreground">{children}</p>
     <div className="mt-2 flex gap-2">
