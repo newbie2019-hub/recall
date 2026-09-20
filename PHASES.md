@@ -8,7 +8,8 @@ Rule for every phase: it ends with something you can actually use. Estimates
 assume one developer.
 
 **Status:** 0–4 ✅ · 5 ✅ (one line open: server-side FSRS) · 6 ✅ · 7 ✅ · 8 ✅ ·
-**next: the media transport at the end of Phase 8, then Phase 9** · 10–12 planned.
+9 ✅ (live cursors deferred, with the reason) · **next: the media transport at
+the end of Phase 8 — now the oldest unpaid item in the plan** · 10–12 planned.
 
 Inside a phase, ✅ is landed and tested, ◻︎ is not started, ⚠️ is partly there and
 says what is missing.
@@ -486,27 +487,77 @@ distribution path already reads.*
 
 ---
 
-## Phase 9 — Live collaboration (full co-editing) · ~2 weeks · **← next**
+## Phase 9 — Live collaboration (full co-editing) · ~2 weeks · ✅
 
-> Preceded by the ~0.5 wk media transport scheduled at the end of Phase 8. Adding
-> a second writer to a deck whose images still cannot travel is building on the
-> gap rather than closing it.
+> **Built before the media transport**, against the ordering this file
+> recommended. The transport is still the next thing to do and is still
+> unstarted — a shared deck of plates has the same hole a published one does.
 
-
-- Y.Doc per deck; notes as `Y.Map`, rich fields as `Y.Text`.
-- Transport **Laravel Reverb**. Laravel stores updates as **opaque binary blobs**
-  and rebroadcasts — PHP merges nothing, because Yjs updates are commutative.
-- **Materialize** applied updates into local SQLite so study and search keep one
-  source of truth. During a session, never write those rows directly.
-- **Nightly compaction** `yjs_updates` → `yjs_snapshot`. Skip it and the log
-  grows without bound — the piece that bites six months in.
-- Presence (avatars, live cursors); roles owner / editor / viewer.
-- **Pages:** collaborator list with role change and removal, invite by email,
-  pending invites. The mechanism was planned long before the screens were.
-- Offline edits queue and merge on reconnect — free, this is what CRDTs are for.
+- ✅ Y.Doc per deck; notes as `Y.Map`, rich fields as `Y.Text`.
+  *The nesting is the design: a `Y.Text` per field merges two people typing in
+  one sentence, and a `Y.Map` per note keeps "add a note" and "edit a different
+  note" from ever seeing each other. What is **not** in the document is
+  scheduling — a card's state is derived from the reviewer's own log (rule 1),
+  and sharing a deck must not share a history. `doc.test.ts` asserts the
+  document's key set for exactly that reason.*
+- ✅ Transport **Laravel Reverb**. Laravel stores updates as **opaque binary
+  blobs** and rebroadcasts — PHP merges nothing, because Yjs updates are
+  commutative. *`doc_updates` is append-only with an auto-increment `seq` as the
+  resume cursor. The one inspection the server performs on a payload is "is this
+  base64", and it exists to keep the column clean rather than to understand the
+  edit.*
+- ✅ **Materialize** applied updates into local SQLite so study and search keep
+  one source of truth. During a session, never write those rows directly.
+  *`materialize.ts` writes through `repo.saveNote`, so a note arriving from a
+  collaborator goes through the same card generation and duplicate checksum as
+  one typed here — including withdrawing a card when a remote edit empties its
+  field. The note editor's save switches to the document when the deck is
+  shared; that switch is the whole of "never write those rows directly".*
+- ✅ **Compaction** `doc_updates` → `doc_snapshots`, with one honest difference
+  from the plan. *It cannot be nightly, and it cannot be the server's:
+  compacting Yjs updates means running Yjs, and there is none in PHP — the same
+  constraint that makes the log opaque. So the API answers `should_compact` and
+  a connected client posts the merged document back; the server stores it and
+  deletes the updates it supersedes. `collab:compact` runs nightly to prune what
+  an interrupted run left behind and to **name** the documents still waiting on
+  a client. A deck nobody opens is never compacted, and the command says so.*
+- ⚠️ Presence (avatars, live cursors); roles owner / editor / viewer.
+  *Avatars and roles are done — the presence channel publishes name and role and
+  deliberately not the email address. **Live cursors are not built.** The fields
+  are `contentEditable` HTML, so a cursor would need a position mapping between
+  the DOM and the `Y.Text` that only a real editor binding (y-prosemirror and a
+  rewrite of the field component) provides; approximating it would put somebody
+  else's caret in the wrong place, which is worse than no caret. The presence
+  bar names who is in the deck instead.*
+- ✅ **Pages:** collaborator list with role change and removal, invite by email,
+  pending invites. *`/decks/:id/share`, reachable from both deck menus, and the
+  invitation lands on the deck list — there is no mail being sent yet, so that
+  banner **is** the delivery. An invitation grants nothing until it is accepted,
+  even for an address that already has an account.*
+- ✅ Offline edits queue and merge on reconnect — free, this is what CRDTs are
+  for. *Free is not the word: Yjs guarantees updates merge whenever they arrive,
+  not that they arrive. The queue in `provider.ts` is what makes the "flaky
+  connection" half of the done-when true, and `Y.mergeUpdates` is what makes a
+  reconnect after ten minutes offline cost one request instead of hundreds.*
 
 **Done when:** two people type in the same card at once, one on a flaky
 connection, nothing is lost, and a third joins mid-session and converges.
+*Held, as 15 tests: `doc.test.ts` runs two documents against each other for the
+concurrent-edit and late-joiner cases, `provider.test.ts` runs a session against
+a server that can be switched offline mid-edit, and 23 API tests cover the roles
+that decide who may write at all.*
+
+> **What guards a shared deck, and what does not.** The server cannot read an
+> update, so it cannot reject a bad one — there is no server-side validation of
+> collaborative content and there cannot be, which CRITIQUE.md scored as the
+> cost of choosing full co-editing. What exists instead is who may send: viewer
+> reads, editor writes, admin changes the roster, and a demotion stops the next
+> update mid-session. The share screen says this out loud rather than leaving it
+> to be discovered.
+>
+> Removal revokes access and **not** the edits. They are merged into every copy
+> already and a CRDT has no authorship to unwind; the UI says so where the
+> button is, instead of implying a rollback that is not on offer.
 
 ---
 

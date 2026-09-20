@@ -23,6 +23,7 @@ import { PublishPage } from '@/routes/PublishPage'
 import { ModerationPage } from '@/routes/ModerationPage'
 import { MyListingsPage } from '@/routes/MyListingsPage'
 import { LegalPage } from '@/routes/LegalPage'
+import { SharePage } from '@/routes/SharePage'
 
 /**
  * The route table.
@@ -76,6 +77,10 @@ export default function App() {
         <Route path="/explore/:listingId" element={<ListingPage />} />
         <Route path="/legal" element={<LegalPage />} />
         <Route path="/decks/:deckId/publish" element={<PublishPage />} />
+
+        {/* Phase 9 — live collaboration. The document itself has no route: it
+            is the deck screen, which becomes live when the deck is shared. */}
+        <Route path="/decks/:deckId/share" element={<SharePage />} />
         <Route path="/moderation" element={<ModerationPage />} />
 
         <Route path="*" element={<NotFoundPage />} />

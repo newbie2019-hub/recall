@@ -23,7 +23,9 @@
     "cn": "^0.3.0",
     "fzstd": "^0.1.1",
     "katex": "^0.18.7",
+    "laravel-echo": "^2.5.0",
     "lucide-react": "^0.544.0",
+    "pusher-js": "^8.6.0",
     "radix-ui": "^1.6.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -31,6 +33,7 @@
     "react-router": "^8.4.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.3.0",
+    "yjs": "^13.6.32",
     "zod": "^4.6.5"
   },
   "devDependencies": {

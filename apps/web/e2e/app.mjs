@@ -348,7 +348,21 @@ const drag = async (from, to) => {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...at(...to) })
 }
 
+/**
+ * One retry, because the *first* drag is the flaky one.
+ *
+ * The editor binds its pointer handlers in an effect that runs after the image
+ * has decoded, and a synthetic press dispatched in the gap between those two
+ * moments is delivered to an element that is not listening yet — no mask, no
+ * error, roughly one run in five. Every later drag lands, which is what says
+ * this is a startup race rather than a broken interaction. Waiting on the
+ * handler itself would mean exposing it to the page; dragging twice costs four
+ * CDP calls.
+ */
 await drag([0.15, 0.15], [0.55, 0.5])
+if (!(await ev(`document.body.innerText.includes('1 card')`))) {
+  await drag([0.15, 0.15], [0.55, 0.5])
+}
 await until(`document.body.innerText.includes('1 card')`, 'first mask')
 ok(true, 'dragging on the image draws a mask, and the mask is a card')
 

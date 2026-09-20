@@ -140,3 +140,56 @@ a deliberate, documented trade with a named upgrade path. A deck of text merges
 across versions, keeps its scheduling, can be rated only by people who studied
 it, and can be taken down in one request with a record that survives the appeal.
 A deck of plates arrives blank, and no amount of moderation polish changes that.
+
+---
+
+## Post-build addendum — Phase 9, written after it shipped
+
+**The scored gap was real and is now load-bearing.** Criterion 3 lost a point
+for "PHP cannot merge Yjs ⇒ no server-side content validation of collab edits".
+Building it made that concrete in a way the plan did not: the *only* thing
+standing between a shared deck and vandalism is `deck_collaborators`, so the
+three roles are not a convenience feature, they are the security model. That is
+why an invitation grants nothing until it is accepted, why a demotion stops the
+next update mid-session, and why the share screen explains what each role can do
+in the words of the thing it affects rather than as three words in a dropdown.
+
+**Compaction could not be what the plan said.** PHASES §9 asked for nightly
+server-side compaction of the update log. Compacting Yjs updates means running
+Yjs, and the same decision that makes the log opaque means there is none in PHP
+— so the plan's line was quietly impossible. The build inverts it: the API asks
+a connected client to compact, the client posts the merged document, and the
+server deletes what it supersedes. The nightly command still exists and does the
+two things a server can do — prune what an interrupted run left, and name the
+documents waiting on a client that has not come back. **A deck nobody opens is
+never compacted**, and that is written in the command rather than left to be
+discovered at month six.
+
+**One bug the tests caught, worth naming because it would have been silent.**
+After the first compaction, the deck's `max(seq)` is lower than the state every
+client holds — the rows it covered are gone. The watermark check then rejected
+the *second* snapshot as "claiming updates this deck does not have", which would
+have meant a busy deck compacting exactly once and growing without bound
+afterwards: the precise failure the phase exists to prevent, arriving six months
+late and looking like a performance problem.
+
+**What was cut, and why it is a cut rather than a bug.** Live cursors. The note
+fields are `contentEditable` HTML, so a remote caret needs a position mapping
+between the DOM and the `Y.Text`, which in practice means a real editor binding
+(y-prosemirror) and a rewrite of the field component. An approximation puts
+somebody else's cursor in the wrong place, which is worse than showing none.
+Presence avatars and a live status chip ship instead, and the status chip earns
+its place: in a shared document "saved" and "the other person has it" are
+different claims, and only one is true while the socket is down.
+
+**Score for collaboration as built: 9.5**, and the missing half point is the
+same one the plan lost — open public co-editing has no server-side truth, and
+roles are the only guard. For study groups, which is the wedge, that is the
+right trade. It would not be for a public wiki, and nothing here should be
+pointed at one.
+
+**The plan's own ordering was not followed.** PHASES §8 scheduled the media
+transport before this phase and gave the reason: a second writer on a deck whose
+images cannot travel builds on the gap. Phase 9 was built first anyway, at the
+user's direction. The gap is unchanged and is now the oldest unpaid item in the
+plan — worth saying plainly rather than letting two phases of polish bury it.

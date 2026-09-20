@@ -31,7 +31,7 @@ const LABEL = 'text-[0.625rem] tracking-[0.14em] text-muted-foreground uppercase
 
 /** The card list for one deck and everything under it. */
 export function Browse({
-  deck, onBack, onOpen, onNew, onStudy, onEditDeck, onDeleteDeck, onNewSubdeck,
+  deck, onBack, onOpen, onNew, onStudy, onEditDeck, onDeleteDeck, onNewSubdeck, onShare,
 }: {
   deck: repo.DeckRow
   onBack: () => void
@@ -41,6 +41,7 @@ export function Browse({
   onEditDeck: () => void
   onDeleteDeck: () => void
   onNewSubdeck: () => void
+  onShare?: () => void
 }) {
   const [notes, setNotes] = useState<repo.NoteRow[] | null>(null)
   const [query, setQuery] = useState('')
@@ -92,6 +93,7 @@ export function Browse({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={onNewSubdeck}>New subdeck</DropdownMenuItem>
                 <DropdownMenuItem onClick={onEditDeck}>Rename or move</DropdownMenuItem>
+                {onShare && <DropdownMenuItem onClick={onShare}>Share…</DropdownMenuItem>}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={onDeleteDeck}>
                   Delete deck

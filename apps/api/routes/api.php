@@ -2,13 +2,17 @@
 
 use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CollaborationController;
 use App\Http\Controllers\Api\V1\DeviceController;
+use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\ImportController;
 use App\Http\Controllers\Api\V1\ListingController;
 use App\Http\Controllers\Api\V1\ModerationController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
 use App\Http\Controllers\Api\V1\SyncController;
 use App\Models\Listing;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -96,6 +100,51 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::put('marketplace/listings/{listing}/rating', [ListingController::class, 'rate'])
         ->middleware('throttle:30,1')
         ->name('marketplace.listings.rate');
+
+    /*
+     * Live collaboration (Phase 9).
+     *
+     * The channel authorizer lives here rather than at Laravel's default
+     * `/broadcasting/auth` because this API has no session and no CSRF token —
+     * a bearer client cannot reach a route behind the `web` middleware, and
+     * mounting it inside this group is what lets Sanctum answer for it.
+     */
+    Route::post('broadcasting/auth', fn (Request $request) => Broadcast::auth($request))
+        ->name('broadcasting.auth');
+
+    Route::get('decks/{deck}/collaborators', [CollaborationController::class, 'index'])
+        ->name('decks.collaborators.index');
+
+    // Inviting sends nothing yet and still costs a row per call; the throttle is
+    // what stops a deck's roster being used as a way to spam an address list.
+    Route::post('decks/{deck}/collaborators', [CollaborationController::class, 'store'])
+        ->middleware('throttle:20,60')
+        ->name('decks.collaborators.store');
+
+    Route::patch('decks/{deck}/collaborators/{collaborator}', [CollaborationController::class, 'update'])
+        ->name('decks.collaborators.update');
+
+    Route::delete('decks/{deck}/collaborators/{collaborator}', [CollaborationController::class, 'destroy'])
+        ->name('decks.collaborators.destroy');
+
+    Route::get('collaborations', [CollaborationController::class, 'invitations'])
+        ->name('collaborations.index');
+
+    Route::post('collaborations/{invitation}/accept', [CollaborationController::class, 'accept'])
+        ->name('collaborations.accept');
+
+    Route::delete('collaborations/{invitation}', [CollaborationController::class, 'decline'])
+        ->name('collaborations.decline');
+
+    /*
+     * The document itself. No throttle on `store`: it is one debounced batch of
+     * keystrokes, and a limit low enough to stop abuse is low enough to stop
+     * typing. What bounds it is the per-update size cap and the fact that only
+     * an invited editor can reach it at all.
+     */
+    Route::get('decks/{deck}/doc', [DocumentController::class, 'show'])->name('decks.doc.show');
+    Route::post('decks/{deck}/doc/updates', [DocumentController::class, 'store'])->name('decks.doc.store');
+    Route::post('decks/{deck}/doc/snapshot', [DocumentController::class, 'compact'])->name('decks.doc.compact');
 
     Route::middleware('can:moderate,'.Listing::class)->group(function (): void {
         Route::get('moderation/reports', [ModerationController::class, 'index'])

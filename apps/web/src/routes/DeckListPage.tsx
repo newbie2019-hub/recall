@@ -12,6 +12,7 @@ import { DeckDialog, type DeckDialogMode } from '@/components/DeckDialog'
 import { ApkgButtons } from '@/components/Apkg'
 import { AccountMenu } from '@/components/AccountMenu'
 import { SyncBanner } from '@/components/SyncBanner'
+import { InvitationsBanner } from '@/components/collab/InvitationsBanner'
 import { useDecks } from '@/hooks/useDecks'
 import { useClonedDeckUpdates } from '@/hooks/useClonedDeckUpdates'
 import { paths } from './paths'
@@ -81,6 +82,7 @@ export function DeckListPage() {
         </div>
       </header>
       <SyncBanner />
+      <InvitationsBanner onJoined={() => void reload()} />
 
       <ul className="mb-8">
         {decks?.map((d) => (
@@ -123,6 +125,9 @@ export function DeckListPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setDeckDialog({ kind: 'edit', deck: d })}>
                   Rename or move
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(paths.share(d.id))}>
+                  Share…
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate(paths.publishDeck(d.id))}>
                   Publish…

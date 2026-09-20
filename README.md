@@ -35,6 +35,9 @@ packages/core     no DOM, no React. Schema, FSRS wrapper, replay, and the whole
 apps/web/src/db   worker.ts (owns SQLite), client.ts (RPC), repo.ts (queries)
 apps/web/src/lib  media.ts (content-addressed store), render.ts (core → HTML)
 apps/web/src      App.tsx, components/{Review,Browse,NoteEditor,OcclusionEditor,CardFrame}.tsx
+apps/web/src/lib/collab  doc.ts (the Y.Doc shape), provider.ts (queue + socket),
+                  materialize.ts (document → SQLite), transport.ts, echo.ts
+apps/api/app      Services/{Anki,Auth,Sync,Marketplace,Collaboration}/
 ```
 
 ## Five rules the rest depends on
@@ -60,10 +63,15 @@ apps/web/src      App.tsx, components/{Review,Browse,NoteEditor,OcclusionEditor,
 
 ## Status
 
-Phases 0–2 complete: storage spine, offline study loop, and the full note/card
-type engine with authoring.
+Phases 0–9 complete: the storage spine, the offline study loop, the note and
+card type engine, Anki import and export, the Laravel backend with auth and
+sync, the dashboard and card browser, filtered decks, the public marketplace
+with day-one moderation, and live co-editing over Reverb.
 
-Next: **Phase 3 — decks, authoring at volume and the engine Anki needs.** You
-cannot create a deck yet, and adding twenty cards costs twenty navigations; note
-GUIDs, deck override and note-type management all have to land before Phase 4's
-importer can be correct. See [PHASES.md](PHASES.md) and [CARDS.md](CARDS.md).
+Next: **the media transport** — `POST`/`GET /media/{sha256}` for an account's
+own bytes, plus a per-version manifest so a published or shared deck carries its
+images. It is the oldest unpaid item in the plan and it is what stands between
+this and the medical vertical it is aimed at: today a deck of plates publishes,
+clones and co-edits perfectly and arrives blank. After that, **Phase 10 — AI
+card generation.** See [PHASES.md](PHASES.md), [PLAN.md](PLAN.md) and
+[CRITIQUE.md](CRITIQUE.md), which scores the build rather than the plan.

@@ -107,6 +107,15 @@ listing_moderation_events(id, listing_id, moderator_id, action,
                           resulting_status, reason)           -- APPEND ONLY
 yjs_updates(id, doc_id, blob, created_at)                -- collab log
 yjs_snapshots(doc_id, blob, up_to_update_id)             -- compaction
+
+-- As built in Phase 9. Same idea, three differences worth the renaming:
+-- `seq` is an auto-increment because it is the cursor a reconnect resumes from,
+-- the payload is base64 text so the server never touches bytes it has promised
+-- not to read, and the doc is keyed by deck because one deck is one document:
+deck_collaborators(id, deck_id, user_id, invited_email, role,
+                   invited_by, accepted_at)   -- role: viewer|editor|admin
+doc_updates(seq, deck_id, actor_id, payload, created_at)      -- APPEND ONLY
+doc_snapshots(deck_id, payload, up_to_seq, actor_id)          -- client-produced
 ```
 
 Two rules that everything else depends on:

@@ -12,6 +12,10 @@ import { CardFrame } from './CardFrame'
 import { OcclusionEditor } from './OcclusionEditor'
 import { ChangeNoteType } from './ChangeNoteType'
 import * as repo from '@/db/repo'
+import { PresenceBar } from '@/components/collab/PresenceBar'
+import { useCollabSession } from '@/hooks/useCollabSession'
+import { readNote } from '@/lib/collab/doc'
+import { materialize, publishDeletion, publishNote } from '@/lib/collab/materialize'
 import { mediaRef, storeMedia } from '@/lib/media'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { generatedOrds, type NoteType } from '@recall/core'
@@ -168,6 +172,19 @@ export function NoteEditor({
   const [rawHtml, setRawHtml] = useState(false)
   const [changing, setChanging] = useState(false)
 
+  /**
+   * The live session for the deck being edited, or an idle one for the usual
+   * case of a deck nobody else is on (Phase 9).
+   *
+   * Its presence changes where a save *goes*: into the shared document, which
+   * merges it with whatever a collaborator is typing and materialises the row
+   * afterwards — never straight into `notes`, because a direct write is the one
+   * thing that cannot merge.
+   */
+  const collab = useCollabSession(deck)
+  const collaborative =
+    collab.doc !== null && ['owner', 'admin', 'editor'].includes(collab.role ?? '')
+
   const nt = types.find((t) => t.id === typeId)
 
   useEffect(() => {
@@ -195,6 +212,32 @@ export function NoteEditor({
       setTags(note.tags.join(' '))
     })()
   }, [noteId])
+
+  /**
+   * A collaborator's edit to the note on screen.
+   *
+   * The field with the cursor in it is deliberately left alone. Overwriting the
+   * box somebody is typing in would throw away the characters between their
+   * last keystroke and this repaint, and jump their caret — the document has
+   * already merged both sides, so the only question here is when to show it,
+   * and "not mid-word" is the answer.
+   */
+  useEffect(() => {
+    if (!collab.doc || !noteId) return
+    const remote = readNote(collab.doc, noteId)
+    if (!remote) return
+
+    setFields((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const [name, value] of Object.entries(remote.fields)) {
+        if (name === active || (current[name] ?? '') === value) continue
+        next[name] = value
+        changed = true
+      }
+      return changed ? next : current
+    })
+  }, [collab.doc, collab.revision, noteId, active])
 
   // Switching note type keeps whatever field names the two share.
   useEffect(() => {
@@ -310,10 +353,12 @@ export function NoteEditor({
     if (!nt) return
     if (!ords.length) return toast('Nothing to save yet — this note generates no cards')
     const count = ords.length
-    const savedId = await repo.saveNote({
-      id: noteId, noteTypeId: nt.id, deckId: deck, fields,
-      tags: tags.split(/\s+/).filter(Boolean),
-    })
+    const savedId = collaborative && collab.doc
+      ? await saveThroughDocument()
+      : await repo.saveNote({
+        id: noteId, noteTypeId: nt.id, deckId: deck, fields,
+        tags: tags.split(/\s+/).filter(Boolean),
+      })
 
     if (!andStay) {
       toast(noteId ? 'Note saved' : `Added ${count} card${count === 1 ? '' : 's'}`)
@@ -339,8 +384,40 @@ export function NoteEditor({
     document.querySelector<HTMLElement>('[role=textbox]')?.focus()
   }
 
+  /**
+   * The shared-deck write path: into the document, then out to the row.
+   *
+   * A new note mints its id here rather than inside `repo.saveNote`, because
+   * the document needs a key before the row exists — and the id has to be the
+   * same on both sides or the collaborator who receives this note would
+   * materialise a second copy of it.
+   */
+  async function saveThroughDocument(): Promise<string> {
+    const id = noteId ?? crypto.randomUUID()
+    publishNote(collab.doc!, {
+      id,
+      noteTypeId: nt!.id,
+      deckId: deck,
+      fields,
+      tags: tags.split(/\s+/).filter(Boolean).join(' '),
+    })
+    // Materialise straight away rather than waiting for the change callback, so
+    // the row exists by the time this function returns — `Undo` and the browser
+    // both assume a saved note is a note you can read back.
+    await materialize(collab.doc!, deck)
+    await collab.session?.flush()
+    return id
+  }
+
   async function remove() {
     if (!noteId) return
+    // On a shared deck the deletion goes to everybody, because the note is
+    // everybody's. `deleteNote` still runs: it is what removes the local cards
+    // and writes the tombstone the rest of the app reads.
+    if (collaborative && collab.doc) {
+      publishDeletion(collab.doc, noteId)
+      await collab.session?.flush()
+    }
     await repo.deleteNote(noteId)
     toast('Note deleted')
     onDone()
@@ -348,6 +425,16 @@ export function NoteEditor({
 
   return (
     <div className="mx-auto min-h-dvh max-w-3xl px-4 py-8 sm:px-6" onKeyDown={onKeyDown}>
+      {collab.status !== 'idle' && (
+        <div className="mb-4">
+          <PresenceBar
+            members={collab.members}
+            status={collab.status}
+            queued={collab.session?.queued ?? 0}
+          />
+        </div>
+      )}
+
       <header className="mb-8 flex items-baseline justify-between gap-4">
         <h1 className="font-display text-3xl">{noteId ? 'Edit note' : 'New note'}</h1>
         <Button variant="ghost" size="sm" onClick={onCancel}>

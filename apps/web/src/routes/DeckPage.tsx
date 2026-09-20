@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Browse } from '@/components/Browse'
+import { PresenceBar } from '@/components/collab/PresenceBar'
+import { useCollabSession } from '@/hooks/useCollabSession'
 import { DeckDialog, type DeckDialogMode } from '@/components/DeckDialog'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,6 +13,10 @@ export function DeckPage() {
   const navigate = useNavigate()
   const { deckId } = useParams()
   const { decks, reload } = useDecks()
+  // A live session when the deck is shared, idle otherwise. It is opened here
+  // as well as in the editor so that edits arriving while you are *looking* at
+  // the card list land in the list (PHASES §9: one source of truth).
+  const collab = useCollabSession(deckId)
   const [deckDialog, setDeckDialog] = useState<DeckDialogMode | null>(null)
 
   const deck = decks?.find((d) => d.id === deckId)
@@ -44,7 +50,17 @@ export function DeckPage() {
 
   return (
     <>
+      {collab.status !== 'idle' && (
+        <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6">
+          <PresenceBar
+            members={collab.members}
+            status={collab.status}
+            queued={collab.session?.queued ?? 0}
+          />
+        </div>
+      )}
       <Browse
+        key={collab.revision}
         deck={deck}
         onBack={() => navigate(paths.decks)}
         onOpen={(noteId) => navigate(paths.note(noteId))}
@@ -53,6 +69,7 @@ export function DeckPage() {
         onEditDeck={() => setDeckDialog({ kind: 'edit', deck })}
         onDeleteDeck={() => setDeckDialog({ kind: 'delete', deck })}
         onNewSubdeck={() => setDeckDialog({ kind: 'create', parentId: deck.id })}
+        onShare={() => navigate(paths.share(deck.id))}
       />
       <DeckDialog
         mode={deckDialog}

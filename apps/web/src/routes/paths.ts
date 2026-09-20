@@ -40,6 +40,10 @@ export const paths = {
   // The published contact a takedown notice is sent to. Public, and reachable
   // without an account, because the person who needs it is usually not a user.
   legal: '/legal',
+
+  // Phase 9 — one shared deck's people. Not the document: that has no URL,
+  // because it is the deck you are already on.
+  share: (deckId: string) => `/decks/${deckId}/share`,
 } as const
 
 /**
