@@ -1,0 +1,831 @@
+{
+  "generated_by": "packages/core/scripts/fsrs-fixture.ts",
+  "note": "Offsets are milliseconds from the card's creation. Regenerate when ts-fsrs changes.",
+  "cases": [
+    {
+      "name": "the ordinary path: learning steps, then review",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 60000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 172860000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 60000
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 259800000,
+            "stability": 2.3065,
+            "difficulty": 2.1043314,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 87000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 691800000,
+            "stability": 7.3230675,
+            "difficulty": 2.09745544,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 87000000
+          }
+        },
+        {
+          "at": 1296000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 5270400000,
+            "stability": 45.9738733,
+            "difficulty": 2.09058635,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 0,
+            "last_review": 1296000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "Easy from new skips the steps",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 4,
+          "retention": 0.9,
+          "after": {
+            "due": 691200000,
+            "stability": 8.2956,
+            "difficulty": 1,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 432000000,
+          "rating": 4,
+          "retention": 0.9,
+          "after": {
+            "due": 4579200000,
+            "stability": 48.44677004,
+            "difficulty": 1,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 432000000
+          }
+        },
+        {
+          "at": 3456000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 16934400000,
+            "stability": 155.9148409,
+            "difficulty": 1,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 3456000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "Again on a new card repeats the first step",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 1,
+          "retention": 0.9,
+          "after": {
+            "due": 60000,
+            "stability": 0.212,
+            "difficulty": 6.4133,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 60000,
+          "rating": 1,
+          "retention": 0.9,
+          "after": {
+            "due": 120000,
+            "stability": 0.08335672,
+            "difficulty": 8.80630447,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 60000
+          }
+        },
+        {
+          "at": 120000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 720000,
+            "stability": 0.10314065,
+            "difficulty": 8.79272653,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 120000
+          }
+        },
+        {
+          "at": 720000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 87120000,
+            "stability": 0.12584424,
+            "difficulty": 8.77916217,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 720000
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hard everywhere",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 2,
+          "retention": 0.9,
+          "after": {
+            "due": 360000,
+            "stability": 1.2931,
+            "difficulty": 5.11217071,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 300000,
+          "rating": 2,
+          "retention": 0.9,
+          "after": {
+            "due": 660000,
+            "stability": 1.2931,
+            "difficulty": 6.74045952,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 300000
+          }
+        },
+        {
+          "at": 1200000,
+          "rating": 2,
+          "retention": 0.9,
+          "after": {
+            "due": 1560000,
+            "stability": 1.2931,
+            "difficulty": 7.8213935,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 1200000
+          }
+        },
+        {
+          "at": 172800000,
+          "rating": 2,
+          "retention": 0.9,
+          "after": {
+            "due": 173160000,
+            "stability": 3.00788883,
+            "difficulty": 8.53896785,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 172800000
+          }
+        },
+        {
+          "at": 345600000,
+          "rating": 2,
+          "retention": 0.9,
+          "after": {
+            "due": 345960000,
+            "stability": 4.47952507,
+            "difficulty": 9.01532714,
+            "state": "learning",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 0,
+            "last_review": 345600000
+          }
+        }
+      ]
+    },
+    {
+      "name": "a lapse drops into relearning and comes back",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 173400000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 259200000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 1468800000,
+            "stability": 13.8358397,
+            "difficulty": 2.1043314,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 259200000
+          }
+        },
+        {
+          "at": 1728000000,
+          "rating": 1,
+          "retention": 0.9,
+          "after": {
+            "due": 1728600000,
+            "stability": 1.76729057,
+            "difficulty": 7.38997579,
+            "state": "relearning",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 1,
+            "last_review": 1728000000
+          }
+        },
+        {
+          "at": 1728600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 1901400000,
+            "stability": 1.78863716,
+            "difficulty": 7.37781418,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 1,
+            "last_review": 1728600000
+          }
+        },
+        {
+          "at": 2592000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 3456000000,
+            "stability": 10.22208307,
+            "difficulty": 7.36566474,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 6,
+            "lapses": 1,
+            "last_review": 2592000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "two lapses in a row",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 173400000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 432000000,
+          "rating": 1,
+          "retention": 0.9,
+          "after": {
+            "due": 432600000,
+            "stability": 0.68273481,
+            "difficulty": 7.39223814,
+            "state": "relearning",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 1,
+            "last_review": 432000000
+          }
+        },
+        {
+          "at": 432600000,
+          "rating": 1,
+          "retention": 0.9,
+          "after": {
+            "due": 433200000,
+            "stability": 0.24856267,
+            "difficulty": 9.12807478,
+            "state": "relearning",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 1,
+            "last_review": 432600000
+          }
+        },
+        {
+          "at": 433200000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 519600000,
+            "stability": 0.28622224,
+            "difficulty": 9.11417507,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 1,
+            "last_review": 433200000
+          }
+        },
+        {
+          "at": 2160000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 2332800000,
+            "stability": 2.29816838,
+            "difficulty": 9.10028926,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 6,
+            "lapses": 1,
+            "last_review": 2160000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "a card left six months overdue",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 173400000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 172800000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 1123200000,
+            "stability": 10.97104786,
+            "difficulty": 2.1043314,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 172800000
+          }
+        },
+        {
+          "at": 15552000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 28425600000,
+            "stability": 149.29561503,
+            "difficulty": 2.09745544,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 15552000000
+          }
+        },
+        {
+          "at": 34560000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 82425600000,
+            "stability": 554.42365325,
+            "difficulty": 2.09058635,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 0,
+            "last_review": 34560000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "same-day repeats after a success",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 173400000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 172800000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 1123200000,
+            "stability": 10.97104786,
+            "difficulty": 2.1043314,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 172800000
+          }
+        },
+        {
+          "at": 176400000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 1213200000,
+            "stability": 10.97104786,
+            "difficulty": 2.09745544,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 176400000
+          }
+        },
+        {
+          "at": 180000000,
+          "rating": 4,
+          "retention": 0.9,
+          "after": {
+            "due": 1648800000,
+            "stability": 16.93915314,
+            "difficulty": 1,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 0,
+            "last_review": 180000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "the retention target moves mid-history",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 173400000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 172800000,
+          "rating": 3,
+          "retention": 0.8,
+          "after": {
+            "due": 3283200000,
+            "stability": 10.97104786,
+            "difficulty": 2.1043314,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 172800000
+          }
+        },
+        {
+          "at": 2592000000,
+          "rating": 3,
+          "retention": 0.95,
+          "after": {
+            "due": 5184000000,
+            "stability": 74.90209308,
+            "difficulty": 2.09745544,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 2592000000
+          }
+        },
+        {
+          "at": 3456000000,
+          "rating": 3,
+          "retention": 0.7,
+          "after": {
+            "due": 89078400000,
+            "stability": 106.73258476,
+            "difficulty": 2.09058635,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 0,
+            "last_review": 3456000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "a long correct run, to exercise stability growth",
+      "created_at": 0,
+      "steps": [
+        {
+          "at": 0,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 600000,
+            "stability": 2.3065,
+            "difficulty": 2.11810397,
+            "state": "learning",
+            "learning_steps": 1,
+            "reps": 1,
+            "lapses": 0,
+            "last_review": 0
+          }
+        },
+        {
+          "at": 600000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 173400000,
+            "stability": 2.3065,
+            "difficulty": 2.11121424,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 2,
+            "lapses": 0,
+            "last_review": 600000
+          }
+        },
+        {
+          "at": 172800000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 1123200000,
+            "stability": 10.97104786,
+            "difficulty": 2.1043314,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 3,
+            "lapses": 0,
+            "last_review": 172800000
+          }
+        },
+        {
+          "at": 1036800000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 4838400000,
+            "stability": 43.96600398,
+            "difficulty": 2.09745544,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 4,
+            "lapses": 0,
+            "last_review": 1036800000
+          }
+        },
+        {
+          "at": 3888000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 15552000000,
+            "stability": 134.8185891,
+            "difficulty": 2.09058635,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 5,
+            "lapses": 0,
+            "last_review": 3888000000
+          }
+        },
+        {
+          "at": 12960000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 45187200000,
+            "stability": 372.71520437,
+            "difficulty": 2.08372413,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 6,
+            "lapses": 0,
+            "last_review": 12960000000
+          }
+        },
+        {
+          "at": 43200000000,
+          "rating": 3,
+          "retention": 0.9,
+          "after": {
+            "due": 130550400000,
+            "stability": 1010.84381742,
+            "difficulty": 2.07686878,
+            "state": "review",
+            "learning_steps": 0,
+            "reps": 7,
+            "lapses": 0,
+            "last_review": 43200000000
+          }
+        }
+      ]
+    }
+  ]
+}

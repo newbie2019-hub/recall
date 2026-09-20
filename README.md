@@ -87,7 +87,17 @@ names, so publishing one deck is not a read of the publisher's library.
 features after it, so nothing is untracked. A lapse explainer, a **card doctor**
 that audits cards you already have, a generation pipeline whose grading pass
 throws away what will not survive review, and a weakness briefing over the
-dashboard's own figures. All of it off by default. Next: Phase 11, interactive
-sim cards. See [PHASES.md](PHASES.md),
+dashboard's own figures. All of it off by default.
+
+**Phase 11 cleared the debt that was already costing something**, including
+**server-side FSRS** — the line open since Phase 5. It is a port of the client's
+scheduler that writes nothing and *cannot*: `card_states` has no scheduling
+column, deliberately, so the client stays the only thing that schedules and a
+device offline for a fortnight is holding the truth rather than a stale copy of
+one. The server derives, for account-wide reporting and parameter fitting. It
+is pinned against the client's own scheduler by a generated fixture, which
+caught four invisible bugs in the first pass.
+
+Next: Phase 12, interactive sim cards. See [PHASES.md](PHASES.md),
 [PLAN.md](PLAN.md) and [CRITIQUE.md](CRITIQUE.md), which scores the build rather
 than the plan.

@@ -7,15 +7,14 @@ deferred to post-launch**.
 Rule for every phase: it ends with something you can actually use. Estimates
 assume one developer.
 
-**Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
-· 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) ·
-**10a ✅ — the AI meter and the lapse explainer** · **Phase 10 ✅ (AI.md)** · **Phase 11: 4 of 5 ✅ (server-side FSRS open)** · **next: Phase 12, interactive
-sim cards** · 11 (the debt that is already costing something, harvested from the
-tree rather than remembered) · 12 (sim cards) planned · 13 (mobile) deferred
-indefinitely at the product's request.
+**Status:** 0–4 ✅ · 5 ✅ (sign-in became a gate — see §5) · 6 ✅ · 7 ✅ · 8 ✅ ·
+9 ✅ (live cursors deferred, with the reason) · 10 ✅ (designed in
+[AI.md](AI.md)) · 11 ✅ (the debt that was already costing something, harvested
+from the tree rather than remembered) · **next: 12, interactive sim cards** ·
+13 (mobile) deferred indefinitely at the product's request.
 
-**Unpaid, oldest first:** server-side FSRS (Phase 5). The media transport is
-paid — see §8.
+**Nothing is unpaid.** The media transport landed in §8 and server-side FSRS in
+§11 — the two items that carried a parenthesis in this line for six phases.
 
 Inside a phase, ✅ is landed and tested, ◻︎ is not started, ⚠️ is partly there and
 says what is missing.
@@ -663,7 +662,7 @@ that decide who may write at all.*
 
 ---
 
-## Phase 11 — The debt that is already costing something · ~1 week · 4 of 5 ✅
+## Phase 11 — The debt that is already costing something · ~1 week · ✅
 
 > **What landed.** The log now follows a card whose ordinal moves, on both
 > sides of the wire — the server accepts a new `card_id` for a review it
@@ -675,9 +674,9 @@ that decide who may write at all.*
 > named. The moderation queue is keyset-paged and claimable, with claims that
 > lapse rather than park a report forever.
 >
-> **What did not.** Server-side FSRS, which is a port of the scheduler rather
-> than a repair, and is the one item here that is not already costing
-> something.
+> **And server-side FSRS**, which was a port rather than a repair. It is
+> read-only by construction: there is no scheduling column on the server to
+> write to, which is what keeps offline-first honest.
 
 Harvested from the 46 `ponytail:` markers in the tree, not from memory. **Only
 the items that are wrong or expensive *today* are a phase**; the ones that are
@@ -707,9 +706,22 @@ promotes them, and the deliberate trades stay deliberate.
   wrong the first week two moderators work it at once: they collide on the same
   report, and a new report shifts the page under whoever is reading. A
   `claimed_by` / `claimed_at` pair and keyset paging.
-- ◻︎ **Server-side FSRS** — the line left open since Phase 5, and the reason the
-  status header still carries a parenthesis. Dashboards and parameter
-  optimisation both need the server to mirror what the client computes.
+- ✅ **Server-side FSRS** — the line left open since Phase 5.
+  `Services/Scheduling/Fsrs.php` is FSRS-6 ported from `ts-fsrs`, and
+  `Replay.php` folds a review log with it. **It writes nothing, and cannot:**
+  `card_states` has no scheduling column, deliberately, so the client stays the
+  only thing that schedules and an offline device is holding the truth rather
+  than a stale copy of one.
+  *Correctness is a matching problem, so it is pinned by a fixture generated
+  from the client's own scheduler (`pnpm -F @recall/core fixture`) — 10 cases,
+  51 steps, every state transition. Four bugs in the first pass, all invisible
+  by eye and all caught by it: mean reversion toward the unclamped `D0(4)`;
+  8-decimal rounding at each formula, whose output the next step reads;
+  `elapsed_days` as a UTC calendar difference rather than milliseconds; and a
+  review card's four intervals forced into strict order.*
+  `php artisan schedules:replay` is the standing check that a log and a
+  schedule have not quietly stopped agreeing — the class of bug this phase
+  already fixed once in `changeNoteType`.
 
 **Done when:** a note type change survives its card being regenerated; the
 hour-of-day chart says the same thing in March as in June; and two moderators can
