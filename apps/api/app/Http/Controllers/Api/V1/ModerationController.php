@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Contracts\Repositories\ListingRepository;
+use App\Enums\ApiErrorCode;
+use App\Exceptions\ApiException;
 use App\Http\Controllers\Concerns\RespondsWithApi;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ListingResource;
@@ -39,13 +41,23 @@ class ModerationController extends Controller
      * that is ever long enough for this to matter is a queue that needs assignment
      * and claiming, not a better cursor.
      */
+    /**
+     * The queue, keyset-paged.
+     *
+     * The cursor is `<iso timestamp>|<id>` rather than an offset: a report
+     * arriving while somebody reads page two would shift every row down one,
+     * so the next page re-shows a report they already passed and skips one they
+     * never saw. In a queue whose entire job is "nothing is missed", that is
+     * the failure that matters.
+     */
     public function index(Request $request): JsonResponse
     {
         $limit = max(1, min($request->integer('limit', 50), 100));
-        $offset = max(0, $request->integer('cursor'));
-        $reports = $this->listings->openReports($limit, $offset);
+        $after = $this->cursor($request->query('cursor'));
+        $reports = $this->listings->openReports($limit, $after);
 
         $hasMore = $reports->count() === $limit;
+        $last = $reports->last();
 
         return $this->page(
             $reports->map(fn (ListingReport $report): array => [
@@ -56,10 +68,54 @@ class ModerationController extends Controller
                 'created_at' => $report->created_at?->toIso8601String(),
                 'reporter' => $report->reporter?->only(['id', 'name']),
                 'listing' => new ListingResource($report->listing),
+                // Who else is looking at this right now, so two moderators do
+                // not write the same decision twice.
+                'claimed_by' => $this->moderation->heldByAnother($request->user(), $report)
+                    ? $report->claimant?->only(['id', 'name'])
+                    : null,
+                'mine' => $report->claimed_by === $request->user()->id,
             ])->all(),
-            $hasMore ? $offset + $limit : null,
+            // Formatted the way the column stores it, not as ISO-8601: the
+            // comparison happens in SQL, and an offset-bearing string does not
+            // compare against a `DATETIME` the way it reads like it should.
+            $hasMore && $last ? $last->created_at?->utc()->format('Y-m-d H:i:s').'|'.$last->id : null,
             $hasMore,
         );
+    }
+
+    /** Take a report. Refused when somebody else already holds it. */
+    public function claim(Request $request, ListingReport $report): JsonResponse
+    {
+        if (! $this->moderation->claim($request->user(), $report)) {
+            throw new ApiException(
+                ApiErrorCode::Forbidden,
+                'Another moderator is working on that one.',
+            );
+        }
+
+        return $this->ok(['claimed' => true]);
+    }
+
+    /** Put it back for somebody else. */
+    public function release(Request $request, ListingReport $report): JsonResponse
+    {
+        $this->moderation->release($request->user(), $report);
+
+        return $this->ok(['claimed' => false]);
+    }
+
+    /**
+     * @return array{ts: string, id: string}|null
+     */
+    private function cursor(mixed $raw): ?array
+    {
+        if (! is_string($raw) || ! str_contains($raw, '|')) {
+            return null;
+        }
+
+        [$ts, $id] = explode('|', $raw, 2);
+
+        return $ts === '' || $id === '' ? null : ['ts' => $ts, 'id' => $id];
     }
 
     /**

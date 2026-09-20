@@ -35,7 +35,7 @@ final class ApiResponse
      * statement from "no rows this time" — a page can be empty and still have a
      * cursor if the rows above it were filtered out.
      */
-    public static function page(mixed $data, ?int $nextCursor): JsonResponse
+    public static function page(mixed $data, int|string|null $nextCursor): JsonResponse
     {
         return self::data($data, ['next_cursor' => $nextCursor]);
     }

@@ -5,6 +5,7 @@ namespace App\Services\Sync;
 use App\Contracts\Repositories\SyncRepository;
 use App\Contracts\Repositories\UserRepository;
 use App\Enums\SyncResource;
+use App\Models\Review;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -125,8 +126,15 @@ final readonly class SyncService
         $present = array_keys($this->sync->existing($user, $resource, array_keys($keyed)));
         $fresh = array_diff_key($keyed, array_flip($present));
 
+        // A card id is `<note id>:<ord>`, so changing a note type renames the
+        // cards whose ordinals moved — and the answers somebody gave to those
+        // cards have to follow. See `repo.changeNoteType`.
+        $moved = $resource === SyncResource::Reviews
+            ? $this->repointMovedReviews($user, array_intersect_key($keyed, array_flip($present)))
+            : 0;
+
         if ($fresh === []) {
-            return ['applied' => 0, 'skipped' => array_values($present)];
+            return ['applied' => $moved, 'skipped' => array_values($present)];
         }
 
         $now = Carbon::now();
@@ -152,9 +160,78 @@ final readonly class SyncService
         }
 
         return [
-            'applied' => $this->sync->insertMany($user, $resource, $insert),
+            'applied' => $this->sync->insertMany($user, $resource, $insert) + $moved,
             'skipped' => array_values($present),
         ];
+    }
+
+    /**
+     * Let a review follow the card it was about, and nothing else.
+     *
+     * **This is the one exception to "inserted if absent and never updated",
+     * and it is deliberately the narrowest one possible.** Nothing is deleted
+     * and no outcome is rewritten: the rating, the instant and the duration are
+     * untouched and unreachable from here. What moves is a *pointer*, because
+     * the thing it points at was renamed by a note-type change.
+     *
+     * Two guards make it safe to allow at all. The new card id must share the
+     * note prefix of the old one, so a client cannot re-point somebody's
+     * history at an unrelated card. And only `card_id` is ever written, so a
+     * replayed push cannot quietly revise what happened.
+     *
+     * Without it, a device that changed a note type would hold a corrected log
+     * while the server kept a stale one — and the next device to sync would
+     * rebuild its scheduling from the stale copy.
+     *
+     * @param  array<string, array<string, mixed>>  $rows  incoming rows the server already has
+     */
+    private function repointMovedReviews(User $user, array $rows): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+
+        $stored = Review::query()
+            ->where('user_id', $user->id)
+            ->whereIn('id', array_keys($rows))
+            ->get(['id', 'card_id'])
+            ->keyBy('id');
+
+        $moved = 0;
+
+        foreach ($rows as $id => $row) {
+            $incoming = (string) ($row['card_id'] ?? '');
+            $current = $stored->get($id)?->card_id;
+
+            if ($current === null || $incoming === '' || $incoming === $current) {
+                continue;
+            }
+
+            // Same note, different ordinal. Anything else is not a rename.
+            if ($this->noteOf($incoming) !== $this->noteOf($current)) {
+                continue;
+            }
+
+            Review::query()
+                ->where('user_id', $user->id)
+                ->where('id', $id)
+                ->update([
+                    'card_id' => $incoming,
+                    'revision' => $this->users->allocateRevisions($user),
+                ]);
+
+            $moved++;
+        }
+
+        return $moved;
+    }
+
+    /** The note half of a `<note id>:<ord>` card id. */
+    private function noteOf(string $cardId): string
+    {
+        $cut = strrpos($cardId, ':');
+
+        return $cut === false ? $cardId : substr($cardId, 0, $cut);
     }
 
     /**

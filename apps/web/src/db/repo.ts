@@ -9,6 +9,7 @@ import {
   firstFieldOf,
   generatedOrds,
   mapFields,
+  moveReviewStatements,
   newCard,
   newGuid,
   Rating,
@@ -353,10 +354,20 @@ export async function deleteNoteType(noteTypeId: string): Promise<void> {
  * Cards whose ordinal is mapped keep their scheduling state; the rest are
  * dropped and regenerated from the target's templates.
  *
- * ponytail: a remapped card carries its state to the new ordinal but its rows
- * in the append-only review log stay under the old card id. Delete and
- * regenerate that card afterwards and it replays the ordinal's older history.
- * Rewrite the log here once sync can reconcile an id change (Phase 5).
+ * **The log moves with the card.** A card id is `<note id>:<ord>` (README rule
+ * 2), so remapping an ordinal changes the card's identity — and the answers
+ * somebody gave to that card have to follow it. They used to be left behind,
+ * which meant a regenerated card at the old ordinal silently inherited a
+ * stranger's history the next time anything replayed it. That is a violation of
+ * rule 1, not a slow query: `cards` is a cache of `reviews`, so a log pointing
+ * at the wrong card is scheduling built on somebody else's answers.
+ *
+ * Rewriting a `card_id` does not break the append-only rule. Nothing is deleted
+ * and no outcome changes — the rating, the instant and the duration are
+ * untouched. What moves is a *pointer*, and it moves because the thing it
+ * points at was renamed. The server enforces exactly that narrowness: it will
+ * accept a new `card_id` for a review it already has, and only when the new id
+ * belongs to the same note.
  */
 export async function changeNoteType(
   noteIds: string[],
@@ -386,6 +397,11 @@ export async function changeNoteType(
       .map((c) => ({ card: c, ord: templateMap[c.ord] ?? null }))
       .filter((c): c is { card: typeof cards[number]; ord: number } => c.ord !== null)
 
+    // Ordinals that actually move. A card remapped onto its own ordinal needs
+    // nothing doing, and rewriting its log rows would mark them unsynced for
+    // no reason.
+    const moved = kept.filter(({ card, ord }) => card.ord !== ord)
+
     await db.batch([
       {
         sql: `UPDATE notes SET note_type = ?, fields = ?, checksum = ?, updated_at = ? WHERE id = ?`,
@@ -402,6 +418,14 @@ export async function changeNoteType(
           overrideOf(to, ord),
         ),
       })),
+
+      // The log follows the card. Two passes, and the reason is in
+      // `core/cardmove.ts` along with the test for the case that makes it
+      // necessary — two ordinals swapping.
+      ...moveReviewStatements(moved.map(({ card, ord }) => ({
+        from: card.id,
+        to: cardId(n.id, ord),
+      }))),
     ])
 
     await regenerateCards(n.id, to, fields, n.deck_id, now)

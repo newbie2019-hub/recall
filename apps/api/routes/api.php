@@ -217,6 +217,13 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('moderation/reports', [ModerationController::class, 'index'])
             ->name('moderation.reports.index');
 
+        // Claiming is how two moderators stay out of each other's way. A soft
+        // lock with an expiry, because an explicit release is the step
+        // everybody forgets.
+        Route::post('moderation/reports/{report}/claim', [ModerationController::class, 'claim'])
+            ->name('moderation.reports.claim');
+        Route::delete('moderation/reports/{report}/claim', [ModerationController::class, 'release'])
+            ->name('moderation.reports.release');
         Route::post('moderation/reports/{report}/dismiss', [ModerationController::class, 'dismiss'])
             ->name('moderation.reports.dismiss');
 

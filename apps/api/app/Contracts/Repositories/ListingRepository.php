@@ -49,7 +49,8 @@ interface ListingRepository
      *
      * @return Collection<int, ListingReport>
      */
-    public function openReports(int $limit, int $offset): Collection;
+    /** @param array{ts: string, id: string}|null $after keyset cursor, not an offset */
+    public function openReports(int $limit, ?array $after = null): Collection;
 
     /** Has a human ever approved anything this account published? */
     public function hasApprovedListing(User $publisher): bool;

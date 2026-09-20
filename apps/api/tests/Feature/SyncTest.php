@@ -150,6 +150,45 @@ class SyncTest extends TestCase
         $this->assertSame(3, Review::first()->rating);
     }
 
+    public function test_a_review_follows_its_card_when_a_note_type_change_renames_it(): void
+    {
+        // A card id is `<note id>:<ord>`, so remapping an ordinal renames the
+        // card — and the answers given to it have to follow, or the next device
+        // to sync rebuilds its scheduling from a log pointing at the wrong card.
+        $id = (string) Str::uuid();
+        $this->push(['reviews' => [[
+            'id' => $id, 'card_id' => 'n:0', 'client_ts' => 1_700_000_000_000, 'rating' => 3,
+        ]]])->assertOk();
+
+        $this->push(['reviews' => [[
+            'id' => $id, 'card_id' => 'n:1', 'client_ts' => 1_700_000_000_000, 'rating' => 3,
+        ]]])->assertOk();
+
+        $review = Review::first();
+        $this->assertSame('n:1', $review->card_id, 'the pointer moved');
+        $this->assertSame(3, $review->rating, 'and nothing else did');
+        $this->assertSame(1, Review::count(), 'no second row');
+    }
+
+    public function test_a_review_cannot_be_repointed_at_another_note(): void
+    {
+        // The guard that makes the exception safe to allow at all: a rename is
+        // a new ordinal on the same note. Anything else is a client trying to
+        // graft one card's history onto another.
+        $id = (string) Str::uuid();
+        $this->push(['reviews' => [[
+            'id' => $id, 'card_id' => 'n:0', 'client_ts' => 1_700_000_000_000, 'rating' => 3,
+        ]]])->assertOk();
+
+        $this->push(['reviews' => [[
+            'id' => $id, 'card_id' => 'somebody-else:0', 'client_ts' => 1_700_000_000_000, 'rating' => 1,
+        ]]])->assertOk();
+
+        $review = Review::first();
+        $this->assertSame('n:0', $review->card_id, 'refused');
+        $this->assertSame(3, $review->rating, 'and the outcome is still untouchable');
+    }
+
     public function test_a_wrong_client_clock_is_clamped_not_rewritten(): void
     {
         $this->push(['reviews' => [[

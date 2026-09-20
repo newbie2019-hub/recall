@@ -34,7 +34,11 @@ export type ApiErrorCode =
 export interface ApiEnvelope<T> {
   data: T
   server_time: number
-  next_cursor?: number | null
+  /**
+   * Opaque. An integer where it is an offset or a revision, a string where the
+   * list is keyset-paged. Hand it back as received; never do arithmetic on it.
+   */
+  next_cursor?: number | string | null
   has_more?: boolean
 }
 

@@ -9,7 +9,8 @@ assume one developer.
 
 **Status:** 0–4 ✅ · 5 ✅ (server-side FSRS open; sign-in became a gate, see §5)
 · 6 ✅ · 7 ✅ · 8 ✅ · 9 ✅ (live cursors deferred, with the reason) ·
-**10a ✅ — the AI meter and the lapse explainer** · **Phase 10 ✅ (AI.md)** · **next: Phase 11, interactive sim cards** · 11 (the debt that is already costing something, harvested from the
+**10a ✅ — the AI meter and the lapse explainer** · **Phase 10 ✅ (AI.md)** · **Phase 11: 4 of 5 ✅ (server-side FSRS open)** · **next: Phase 12, interactive
+sim cards** · 11 (the debt that is already costing something, harvested from the
 tree rather than remembered) · 12 (sim cards) planned · 13 (mobile) deferred
 indefinitely at the product's request.
 
@@ -662,33 +663,47 @@ that decide who may write at all.*
 
 ---
 
-## Phase 11 — The debt that is already costing something · ~1 week
+## Phase 11 — The debt that is already costing something · ~1 week · 4 of 5 ✅
+
+> **What landed.** The log now follows a card whose ordinal moves, on both
+> sides of the wire — the server accepts a new `card_id` for a review it
+> already holds, and only when the new id belongs to the same note, which is
+> the narrowest exception to append-only that fixes it. Both time charts bucket
+> in JS against real local midnights, so a 23-hour day is one day. Marketplace
+> search uses a `FULLTEXT` index on MySQL and keeps the scan on SQLite, because
+> the suite runs on SQLite and assuming otherwise was the trap the old comment
+> named. The moderation queue is keyset-paged and claimable, with claims that
+> lapse rather than park a report forever.
+>
+> **What did not.** Server-side FSRS, which is a port of the scheduler rather
+> than a repair, and is the one item here that is not already costing
+> something.
 
 Harvested from the 46 `ponytail:` markers in the tree, not from memory. **Only
 the items that are wrong or expensive *today* are a phase**; the ones that are
 correct until a threshold are in the table below, with the threshold that
 promotes them, and the deliberate trades stay deliberate.
 
-- ◻︎ **`changeNoteType` leaves the review log behind.** A remapped card carries
+- ✅ **`changeNoteType` leaves the review log behind.** A remapped card carries
   its scheduling state to the new ordinal, but its rows in the append-only log
   stay under the old card id — delete and regenerate that card and it replays the
   *older* ordinal's history. The comment at `db/repo.ts` defers this until "sync
   can reconcile an id change (Phase 5)". Phase 5 shipped. This is the only item
   here that can corrupt scheduling, and it is a violation of README rule 1 rather
   than a slow query.
-- ◻︎ **Two stats charts are an hour wrong across DST.** `daily()` buckets by
+- ✅ **Two stats charts are an hour wrong across DST.** `daily()` buckets by
   integer division from local midnight; `byHour()` applies *today's* UTC offset to
   every historical timestamp. Both comments say "fine unless it drives
   scheduling" — and 10d is about to read them. Bucket in JS from the raw
   timestamps; SQLite's `localtime` reads the host TZ, which in a wasm worker is
   not reliably the user's.
-- ◻︎ **Marketplace search is `LIKE '%term%'` over three columns**, unindexed, and
+- ✅ **Marketplace search is `LIKE '%term%'` over three columns**, unindexed, and
   scans the table. `FULLTEXT` on (title, description, tags) is a migration plus a
   `whereFullText()`, not a search engine. Carry the warning already at the call
   site: **the suite runs on SQLite, which has no `FULLTEXT`** — decide whether the
   browse test gets a MySQL connection or a documented skip *before* writing the
   migration, not after it goes red.
-- ◻︎ **The moderation queue is offset-paged and unassigned.** Fine at zero decks,
+- ✅ **The moderation queue is offset-paged and unassigned.** Fine at zero decks,
   wrong the first week two moderators work it at once: they collide on the same
   report, and a new report shifts the page under whoever is reading. A
   `claimed_by` / `claimed_at` pair and keyset paging.

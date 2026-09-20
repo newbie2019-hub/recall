@@ -23,7 +23,7 @@ export function MarketplacePage() {
   const { user } = useAuth()
   const [q, setQ] = useState('')
   const [listings, setListings] = useState<Listing[] | null>(null)
-  const [cursor, setCursor] = useState<number | null>(null)
+  const [cursor, setCursor] = useState<number | string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [attempt, setAttempt] = useState(0)

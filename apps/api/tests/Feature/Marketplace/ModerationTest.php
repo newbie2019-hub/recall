@@ -7,6 +7,7 @@ namespace Tests\Feature\Marketplace;
 use App\Models\Listing;
 use App\Models\ListingReport;
 use App\Models\Note;
+use App\Services\Marketplace\ModerationService;
 use Illuminate\Support\Str;
 
 class ModerationTest extends MarketplaceTestCase
@@ -274,5 +275,106 @@ class ModerationTest extends MarketplaceTestCase
                 'version' => 1,
             ])
             ->assertNotFound();
+    }
+
+    // ── two moderators, one queue (Phase 11) ──────────────────────────────
+
+    /** A published listing with one open report against it. */
+    private function openReport(): ListingReport
+    {
+        $publisher = $this->account();
+        $listing = $this->publishedListing($publisher, $this->deckWithNotes($publisher));
+
+        $this->actingAsToken($this->tokenFor($this->account()))
+            ->postJson(route('marketplace.listings.report', $listing), ['reason' => 'spam'])
+            ->assertCreated();
+
+        return ListingReport::query()->where('listing_id', $listing->id)->sole();
+    }
+
+    public function test_two_moderators_cannot_work_the_same_report(): void
+    {
+        // The failure is not a crash: it is two people writing the same
+        // decision, or one dismissing what the other is still reading. The
+        // claim is decided in the database, because two browsers reading
+        // "unclaimed" in the same second both believe it.
+        $first = $this->account(moderator: true);
+        $second = $this->account(moderator: true);
+        $report = $this->openReport();
+
+        $this->actingAsToken($this->tokenFor($first))
+            ->postJson(route('moderation.reports.claim', $report))
+            ->assertOk()
+            ->assertJsonPath('data.claimed', true);
+
+        $this->actingAsToken($this->tokenFor($second))
+            ->postJson(route('moderation.reports.claim', $report))
+            ->assertStatus(403);
+
+        $this->actingAsToken($this->tokenFor($second))
+            ->getJson(route('moderation.reports.index'))
+            ->assertOk()
+            ->assertJsonPath('data.0.claimed_by.id', $first->id)
+            ->assertJsonPath('data.0.mine', false);
+    }
+
+    public function test_a_claim_can_be_handed_back(): void
+    {
+        $first = $this->account(moderator: true);
+        $second = $this->account(moderator: true);
+        $report = $this->openReport();
+
+        $this->actingAsToken($this->tokenFor($first))
+            ->postJson(route('moderation.reports.claim', $report))->assertOk();
+        $this->actingAsToken($this->tokenFor($first))
+            ->deleteJson(route('moderation.reports.release', $report))->assertOk();
+
+        $this->actingAsToken($this->tokenFor($second))
+            ->postJson(route('moderation.reports.claim', $report))
+            ->assertOk();
+    }
+
+    public function test_a_stale_claim_does_not_park_a_report_forever(): void
+    {
+        // A moderator who claims three reports and shuts their laptop must not
+        // take them out of the queue for good, and an explicit release is the
+        // step everybody forgets.
+        $gone = $this->account(moderator: true);
+        $working = $this->account(moderator: true);
+        $report = $this->openReport();
+
+        $this->actingAsToken($this->tokenFor($gone))
+            ->postJson(route('moderation.reports.claim', $report))->assertOk();
+
+        $this->travel(ModerationService::CLAIM_MINUTES + 1)->minutes();
+
+        $this->actingAsToken($this->tokenFor($working))
+            ->postJson(route('moderation.reports.claim', $report))
+            ->assertOk();
+    }
+
+    public function test_the_queue_pages_on_a_key_rather_than_an_offset(): void
+    {
+        // Offset paging re-shows a report somebody already passed the moment a
+        // new one arrives above it. In a queue whose job is "nothing is
+        // missed", that is the failure mode.
+        $moderator = $this->account(moderator: true);
+        $ids = collect(range(1, 3))->map(fn (): string => $this->openReport()->id)->all();
+
+        $first = $this->actingAsToken($this->tokenFor($moderator))
+            ->getJson(route('moderation.reports.index', ['limit' => 2]))
+            ->assertOk();
+
+        $cursor = $first->json('next_cursor');
+        $this->assertNotNull($cursor);
+        $this->assertStringContainsString('|', $cursor, 'a timestamp and an id, not a row number');
+
+        $second = $this->actingAsToken($this->tokenFor($moderator))
+            ->getJson(route('moderation.reports.index', ['limit' => 2, 'cursor' => $cursor]))
+            ->assertOk();
+
+        $seen = array_merge($first->json('data.*.id'), $second->json('data.*.id'));
+        $this->assertCount(3, array_unique($seen), 'every report once, none twice');
+        $this->assertEqualsCanonicalizing($ids, array_values(array_unique($seen)));
     }
 }

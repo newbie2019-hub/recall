@@ -159,6 +159,55 @@ test('the day buckets and the hour buckets both come back fully populated', asyn
   assert.equal(hours.reduce((s, h) => s + h.reviews, 0), 55)
 })
 
+test('a day that is not 24 hours long is still one day', async () => {
+  // The bug this replaced: both charts bucketed in SQL, `daily()` by dividing
+  // by 86,400,000 from local midnight and `byHour()` by applying *today's* UTC
+  // offset to every historical timestamp. Two days a year are 23 or 25 hours
+  // long, so every bucket after a change was shifted and a year of hour-of-day
+  // data was relabelled twice a year. 10d's briefing now reads both.
+  const boundaries = stats.dayBoundaries(400)
+
+  assert.equal(boundaries.length, 400)
+  for (let i = 1; i < boundaries.length; i++) {
+    const gap = boundaries[i]! - boundaries[i - 1]!
+    assert.ok(gap >= 23 * 3_600_000 && gap <= 25 * 3_600_000, `day ${i} is a plausible length`)
+    assert.equal(new Date(boundaries[i]!).getHours(), 0, 'every boundary is a local midnight')
+  }
+
+  // And somewhere in 400 days there is at least one day that is not 24 hours,
+  // wherever this test runs — unless the host has no DST at all, which is a
+  // legitimate outcome rather than a failure.
+  const lengths = new Set(boundaries.slice(1).map((b, i) => b - boundaries[i]!))
+  assert.ok(lengths.size <= 3, 'at most: a short day, a long day, and the ordinary one')
+})
+
+test('a review is counted on the local day it happened, not a fixed slice', () => {
+  const boundaries = stats.dayBoundaries(3)
+  const yesterdayNoon = boundaries[1]! + 12 * 3_600_000
+
+  const counts = stats.bucketByDay(
+    [{ ts: yesterdayNoon, rating: 3 }, { ts: boundaries[1]!, rating: 1 }],
+    boundaries,
+  )
+
+  assert.equal(counts[1]!.reviews, 2, 'both land on yesterday')
+  assert.equal(counts[1]!.passed, 1)
+  assert.equal(counts[0]!.reviews, 0)
+  assert.equal(counts[2]!.reviews, 0)
+})
+
+test('the hour is the hour that was on the clock at the time', () => {
+  // Not today's offset applied to an old timestamp. Two reviews six months
+  // apart at the same wall-clock hour belong in the same bucket.
+  const winter = new Date(2026, 0, 15, 8, 30).getTime()
+  const summer = new Date(2026, 6, 15, 8, 30).getTime()
+
+  const hours = stats.bucketByHour([{ ts: winter, rating: 3 }, { ts: summer, rating: 3 }])
+
+  assert.equal(hours[8]!.reviews, 2, 'both are hour 8 whatever the clocks did in between')
+  assert.equal(hours.reduce((s, h) => s + h.reviews, 0), 2)
+})
+
 test('a leech arrives with the reason, and the reason names the sibling', async () => {
   const rows = await stats.leeches()
 

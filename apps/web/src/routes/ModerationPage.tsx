@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { Lock } from 'lucide-react'
 import { ApiError } from '@recall/core'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -7,8 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  ago, approveListing, dismissReport, openReports, REPORT_REASONS, takedownListing,
-  unlistListing, type ModerationReport,
+  ago, approveListing, claimReport, dismissReport, openReports,
+  REPORT_REASONS, takedownListing, unlistListing, type ModerationReport,
 } from '@/lib/marketplace'
 import { NotFoundPage } from './NotFoundPage'
 import { paths } from './paths'
@@ -79,9 +80,22 @@ function ReportRow({ report, onDone }: { report: ModerationReport; onDone: () =>
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
+  /**
+   * Somebody else is reading this one.
+   *
+   * Shown rather than hidden, and the actions are disabled rather than removed:
+   * a report that vanishes from a colleague's queue is indistinguishable from
+   * one that was handled, and the point of the claim is to stop two people
+   * writing the same decision — not to hide work from them.
+   */
+  const heldByOther = !!report.claimed_by
+
   async function act(what: 'dismiss' | 'takedown' | 'unlist' | 'approve') {
     setBusy(true)
     try {
+      // Claim on the way in. If another moderator got there first the claim is
+      // refused and the decision never happens — which is the whole feature.
+      await claimReport(report.id)
       if (what === 'dismiss') await dismissReport(report.id, note.trim())
       if (what === 'takedown') await takedownListing(report.listing.id, note.trim())
       if (what === 'unlist') await unlistListing(report.listing.id, note.trim())
@@ -98,7 +112,17 @@ function ReportRow({ report, onDone }: { report: ModerationReport; onDone: () =>
   const counter = report.kind === 'counter_notice'
 
   return (
-    <li className="specimen-tag p-5 pt-7">
+    <li className={`specimen-tag p-5 pt-7${heldByOther ? ' opacity-60' : ''}`}>
+      {heldByOther && (
+        // No "take it anyway": `release` only clears your *own* claim, and a
+        // button that silently does nothing is worse than no button. A claim
+        // lapses on its own after half an hour, which is what makes a
+        // moderator who shut their laptop harmless rather than a blocker.
+        <p className="mb-2 flex items-center gap-2 font-mono text-[0.6875rem] text-eosin">
+          <Lock className="size-3" />
+          {report.claimed_by?.name} is working on this one — it frees up if they stop.
+        </p>
+      )}
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <Link to={paths.listing(report.listing.id)} className="text-base hover:text-hematoxylin">
           {report.listing.title}
@@ -136,16 +160,16 @@ function ReportRow({ report, onDone }: { report: ModerationReport; onDone: () =>
           aria-label={`Reason for acting on ${report.listing.title}`}
           className="flex-1 basis-48"
         />
-        <Button size="sm" variant="outline" disabled={busy || !note.trim()} onClick={() => void act('dismiss')}>
+        <Button size="sm" variant="outline" disabled={busy || heldByOther || !note.trim()} onClick={() => void act('dismiss')}>
           Dismiss
         </Button>
-        <Button size="sm" variant="outline" disabled={busy || !note.trim()} onClick={() => void act('approve')}>
+        <Button size="sm" variant="outline" disabled={busy || heldByOther || !note.trim()} onClick={() => void act('approve')}>
           {counter ? 'Reinstate' : 'Approve'}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          disabled={busy || !note.trim()}
+          disabled={busy || heldByOther || !note.trim()}
           title="Out of Explore, link still works. Existing clones keep updating."
           onClick={() => void act('unlist')}
         >
@@ -154,7 +178,7 @@ function ReportRow({ report, onDone }: { report: ModerationReport; onDone: () =>
         <Button
           size="sm"
           variant="destructive"
-          disabled={busy || !note.trim()}
+          disabled={busy || heldByOther || !note.trim()}
           onClick={() => void act('takedown')}
         >
           Take down

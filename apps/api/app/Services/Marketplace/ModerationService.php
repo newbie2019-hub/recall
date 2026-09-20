@@ -26,6 +26,16 @@ use Illuminate\Support\Facades\DB;
 final readonly class ModerationService
 {
     /**
+     * How long a claim holds before anybody else may take the report.
+     *
+     * A soft lock with an expiry, not an assignment. The alternative is an
+     * explicit release, which is the step everyone forgets — and a queue where
+     * three reports are parked under somebody who went home is a queue that
+     * quietly stops working.
+     */
+    public const CLAIM_MINUTES = 30;
+
+    /**
      * File a report, or a publisher's counter-notice about their own takedown.
      *
      * One open report per person per listing per kind. The rate limit on the
@@ -182,6 +192,51 @@ final readonly class ModerationService
      * `$moderator` is null for a publisher's own counter-notice, which is the
      * only event here that is not a moderator's act.
      */
+    /**
+     * Take a report, unless somebody else already has it.
+     *
+     * The update is conditional and atomic: `WHERE claimed_by IS NULL OR
+     * claimed_at < expiry` decides the race in the database rather than in two
+     * moderators' browsers, and the affected-row count is the answer. Reading
+     * first and writing second would let both of them read "unclaimed".
+     *
+     * Re-claiming your own report is allowed and refreshes the hold, because
+     * that is what a moderator still reading it is doing.
+     */
+    public function claim(User $moderator, ListingReport $report): bool
+    {
+        $expiry = Carbon::now()->subMinutes(self::CLAIM_MINUTES);
+
+        $taken = ListingReport::query()
+            ->where('id', $report->id)
+            ->where('status', ListingReport::STATUS_OPEN)
+            ->where(fn ($q) => $q
+                ->whereNull('claimed_by')
+                ->orWhere('claimed_by', $moderator->id)
+                ->orWhere('claimed_at', '<', $expiry))
+            ->update(['claimed_by' => $moderator->id, 'claimed_at' => Carbon::now()]);
+
+        return $taken > 0;
+    }
+
+    /** Put it back. Explicit, for a moderator who looked and moved on. */
+    public function release(User $moderator, ListingReport $report): void
+    {
+        ListingReport::query()
+            ->where('id', $report->id)
+            ->where('claimed_by', $moderator->id)
+            ->update(['claimed_by' => null, 'claimed_at' => null]);
+    }
+
+    /** Whether a claim is somebody else's and still live. */
+    public function heldByAnother(User $moderator, ListingReport $report): bool
+    {
+        return $report->claimed_by !== null
+            && $report->claimed_by !== $moderator->id
+            && $report->claimed_at !== null
+            && $report->claimed_at->gt(Carbon::now()->subMinutes(self::CLAIM_MINUTES));
+    }
+
     public function record(?Listing $listing, ?User $moderator, string $action, ?string $reason): void
     {
         if ($listing === null) {

@@ -189,22 +189,12 @@ export interface DayCount {
  * notices, bucket in JS from the raw timestamps.
  */
 export async function daily(days = 365): Promise<DayCount[]> {
-  const start = startOfToday() - (days - 1) * DAY
-  const rows = await db.select<{ day: number; reviews: number; passed: number }>(
-    `SELECT CAST((r.ts - ?1) / ?2 AS INTEGER) AS day,
-            COUNT(*) AS reviews,
-            SUM(CASE WHEN r.rating > 1 THEN 1 ELSE 0 END) AS passed
-       FROM reviews r
-      WHERE r.ts >= ?1
-      GROUP BY day`,
-    [start, DAY],
+  const boundaries = dayBoundaries(days)
+  const rows = await db.select<{ ts: number; rating: number }>(
+    'SELECT ts, rating FROM reviews WHERE ts >= ?',
+    [boundaries[0]!],
   )
-  const byDay = new Map(rows.map((r) => [r.day, r]))
-  return Array.from({ length: days }, (_, i) => ({
-    date: start + i * DAY,
-    reviews: byDay.get(i)?.reviews ?? 0,
-    passed: byDay.get(i)?.passed ?? 0,
-  }))
+  return bucketByDay(rows, boundaries)
 }
 
 /**
@@ -236,22 +226,81 @@ export interface HourRow {
  * 24-bucket chart; not fine if this ever drives scheduling.
  */
 export async function byHour(sinceDays = 90): Promise<HourRow[]> {
-  const tz = -new Date().getTimezoneOffset() * 60_000
-  const rows = await db.select<HourRow>(
-    `SELECT CAST(((r.ts + ?2) / 3600000) % 24 AS INTEGER) AS hour,
-            COUNT(*) AS reviews,
-            SUM(CASE WHEN r.rating > 1 THEN 1 ELSE 0 END) AS passed
-       FROM reviews r
-      WHERE r.ts >= ?1
-      GROUP BY hour`,
-    [Date.now() - sinceDays * DAY, tz],
+  const rows = await db.select<{ ts: number; rating: number }>(
+    'SELECT ts, rating FROM reviews WHERE ts >= ?',
+    [Date.now() - sinceDays * DAY],
   )
-  const byHourMap = new Map(rows.map((r) => [r.hour, r]))
-  return Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    reviews: byHourMap.get(hour)?.reviews ?? 0,
-    passed: byHourMap.get(hour)?.passed ?? 0,
-  }))
+  return bucketByHour(rows)
+}
+
+/**
+ * Both of these used to bucket in SQL, and both were an hour wrong across a
+ * daylight-saving boundary.
+ *
+ * `daily()` divided by 86,400,000 from local midnight, which assumes every day
+ * is exactly twenty-four hours — two days a year are not, so every bucket after
+ * a change was shifted by an hour and reviews near midnight fell into the wrong
+ * day. `byHour()` was worse: it applied *today's* UTC offset to every historical
+ * timestamp, so a year of reviews was relabelled twice a year.
+ *
+ * SQLite's own `localtime` is not the answer either. In a wasm worker it reads
+ * the host's timezone database, which is not reliably the user's.
+ *
+ * So the bucketing happens in JS, where `Date` knows the real offset for each
+ * *individual* timestamp. The comments used to say "fine unless it drives
+ * scheduling" — and 10d's briefing now reads both.
+ */
+
+/** Local midnights, newest last. Computed per day, so a 23- or 25-hour day is one day. */
+export function dayBoundaries(days: number, now = Date.now()): number[] {
+  const out: number[] = []
+  const cursor = new Date(now)
+  cursor.setHours(0, 0, 0, 0)
+
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(cursor)
+    // Date arithmetic, not millisecond arithmetic: `setDate` walks the calendar
+    // and lands on the right midnight whatever the offset did in between.
+    day.setDate(day.getDate() - i)
+    day.setHours(0, 0, 0, 0)
+    out.push(day.getTime())
+  }
+
+  return out
+}
+
+/** @param rows raw review timestamps, unbucketed */
+export function bucketByDay(rows: { ts: number; rating: number }[], boundaries: number[]): DayCount[] {
+  const counts = boundaries.map((date) => ({ date, reviews: 0, passed: 0 }))
+
+  for (const row of rows) {
+    // The last boundary at or before this review. A binary search would be
+    // faster and this is 365 entries against a year of reviews read once.
+    let i = counts.length - 1
+    while (i > 0 && row.ts < counts[i]!.date) i--
+    if (row.ts < counts[0]!.date) continue
+
+    counts[i]!.reviews++
+    if (row.rating > 1) counts[i]!.passed++
+  }
+
+  return counts
+}
+
+/** @param rows raw review timestamps, unbucketed */
+export function bucketByHour(rows: { ts: number; rating: number }[]): HourRow[] {
+  const counts = Array.from({ length: 24 }, (_, hour) => ({ hour, reviews: 0, passed: 0 }))
+
+  for (const row of rows) {
+    // `getHours()` uses the offset in force *at that instant*, which is the
+    // whole point: an 08:00 review in January and an 08:00 review in July are
+    // both hour 8, however the clocks moved in between.
+    const hour = new Date(row.ts).getHours()
+    counts[hour]!.reviews++
+    if (row.rating > 1) counts[hour]!.passed++
+  }
+
+  return counts
 }
 
 // ── leeches, each with the reason ─────────────────────────────────────────

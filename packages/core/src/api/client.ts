@@ -435,7 +435,9 @@ export class ApiClient {
 
     return {
       changes: envelope.data,
-      next_cursor: envelope.next_cursor ?? null,
+      // Sync's cursor is a revision number specifically, whatever the envelope
+      // allows in general — `pull(cursor)` does arithmetic on it.
+      next_cursor: typeof envelope.next_cursor === 'number' ? envelope.next_cursor : null,
       has_more: envelope.has_more ?? false,
       server_time: envelope.server_time,
     }

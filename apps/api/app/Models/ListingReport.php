@@ -44,12 +44,27 @@ class ListingReport extends Model
      */
     protected function casts(): array
     {
-        return ['resolved_at' => 'datetime'];
+        return [
+            'resolved_at' => 'datetime',
+            // Compared against a claim expiry, never parsed at the call site.
+            'claimed_at' => 'datetime',
+        ];
     }
 
     public function listing(): BelongsTo
     {
         return $this->belongsTo(Listing::class);
+    }
+
+    /**
+     * The moderator currently working this report, if the claim is still live.
+     *
+     * A soft lock: see `ModerationService::claim`. A moderator who claims three
+     * reports and closes their laptop must not park them forever.
+     */
+    public function claimant(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'claimed_by');
     }
 
     public function reporter(): BelongsTo

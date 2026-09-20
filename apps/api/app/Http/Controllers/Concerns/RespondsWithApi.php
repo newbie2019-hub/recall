@@ -24,7 +24,15 @@ trait RespondsWithApi
         return ApiResponse::data($data, status: 201);
     }
 
-    protected function page(mixed $data, ?int $nextCursor, bool $hasMore): JsonResponse
+    /**
+     * A page, and the cursor for the next one.
+     *
+     * The cursor is **opaque to the client**: an integer where it is an offset
+     * or a revision, a `<timestamp>|<id>` string where the list is keyset-paged
+     * and an offset would re-show rows as new ones arrive above them. Callers
+     * hand it back exactly as they received it and never do arithmetic on it.
+     */
+    protected function page(mixed $data, int|string|null $nextCursor, bool $hasMore): JsonResponse
     {
         return ApiResponse::data($data, ['next_cursor' => $nextCursor, 'has_more' => $hasMore]);
     }

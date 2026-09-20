@@ -13,12 +13,29 @@ use Illuminate\Support\Collection;
 final class EloquentListingRepository implements ListingRepository
 {
     /**
-     * ponytail: `LIKE '%term%'` over three columns, which cannot use an index and
-     * will scan the table. That is the right trade while the catalogue is small —
-     * MySQL `FULLTEXT` on (title, description, tags) is the upgrade, and it is a
-     * migration plus a `whereFullText()`, not a search engine. Note that the test
-     * suite runs on SQLite, where a FULLTEXT index does not exist, so moving to
-     * one means the browse test needs a MySQL connection.
+     * Browse, with the search term going through an index where there is one.
+     *
+     * Search *was* `LIKE '%term%'` over three columns, which cannot use an
+     * index at all — a leading wildcard makes a B-tree useless — so every query
+     * scanned the table. `FULLTEXT` on (title, description, tags) fixes that,
+     * and it is a migration plus a `whereFullText()` rather than a search
+     * engine.
+     *
+     * **There are two paths and there has to be.** The suite runs on SQLite,
+     * which has no `FULLTEXT`, so assuming MySQL here would turn every browse
+     * test red — the trap the old comment named and this is the answer to it.
+     * MySQL gets the index; everything else keeps the scan, which is correct at
+     * the sizes a SQLite deployment reaches anyway.
+     *
+     * ⚠️ **InnoDB does not update a FULLTEXT index until the inserting
+     * transaction commits.** A listing created inside one is therefore not
+     * matchable until it lands — harmless in production, where publishing
+     * commits, and extremely confusing anywhere else. Verified by hand against
+     * the development MySQL: the same row returns zero rows inside a
+     * transaction and matches every term outside one. If this suite is ever
+     * pointed at MySQL, `RefreshDatabase` wraps each test in a transaction and
+     * every search assertion will return nothing — for this reason, not
+     * because the query is wrong.
      *
      * @return Collection<int, Listing>
      */
@@ -39,6 +56,19 @@ final class EloquentListingRepository implements ListingRepository
                 'listing_versions.size_bytes',
             ])])
             ->when($term !== null && $term !== '', function ($query) use ($term): void {
+                if ($this->hasFullText()) {
+                    // Boolean mode with a trailing `*` so "anat" still finds
+                    // "anatomy" — a marketplace search box is a prefix search in
+                    // the user's head, whatever the index calls it.
+                    $query->whereFullText(
+                        ['title', 'description', 'tags'],
+                        self::booleanTerm($term),
+                        ['mode' => 'boolean'],
+                    );
+
+                    return;
+                }
+
                 $query->where(function ($group) use ($term): void {
                     foreach (['title', 'description', 'tags'] as $column) {
                         $group->orWhereLike($column, '%'.$this->escapeLike($term).'%');
@@ -99,13 +129,36 @@ final class EloquentListingRepository implements ListingRepository
     /**
      * @return Collection<int, ListingReport>
      */
-    public function openReports(int $limit, int $offset): Collection
+    /**
+     * The queue, keyset-paged and honest about who is holding what.
+     *
+     * **Offset paging was wrong here for a reason that is not performance.** A
+     * report arriving while somebody reads page two shifts every row down one,
+     * so the next page silently re-shows a report they already passed and skips
+     * one they never saw. In a queue whose whole job is "nothing is missed",
+     * that is the failure mode.
+     *
+     * The cursor is `(created_at, id)`. The id breaks ties, because two reports
+     * filed in the same second are ordinary and a cursor on the timestamp alone
+     * either loses one or repeats it forever.
+     *
+     * @param  array{ts: string, id: string}|null  $after
+     */
+    public function openReports(int $limit, ?array $after = null): Collection
     {
         return ListingReport::query()
             ->where('status', ListingReport::STATUS_OPEN)
-            ->with(['listing:id,user_id,title,tags,visibility,status,install_count,latest_version,published_at', 'reporter:id,name'])
+            ->with([
+                'listing:id,user_id,title,tags,visibility,status,install_count,latest_version,published_at',
+                'reporter:id,name',
+                'claimant:id,name',
+            ])
+            ->when($after !== null, fn ($q) => $q->where(
+                fn ($w) => $w->where('created_at', '>', $after['ts'])
+                    ->orWhere(fn ($t) => $t->where('created_at', $after['ts'])->where('id', '>', $after['id'])),
+            ))
             ->orderBy('created_at')
-            ->offset($offset)
+            ->orderBy('id')
             ->limit($limit)
             ->get();
     }
@@ -120,6 +173,28 @@ final class EloquentListingRepository implements ListingRepository
     }
 
     /** A term containing `%` or `_` must match those characters, not act as one. */
+    private function hasFullText(): bool
+    {
+        return in_array(Listing::query()->getConnection()->getDriverName(), ['mysql', 'mariadb'], true);
+    }
+
+    /**
+     * A search box's words, as a boolean-mode query.
+     *
+     * Operator characters are stripped rather than escaped: `+`, `-`, `*`, `(`
+     * and `"` all mean something in boolean mode, and a person typing
+     * "anti-inflammatory" means the word, not "not inflammatory". Each word is
+     * required and prefix-matched.
+     */
+    public static function booleanTerm(string $term): string
+    {
+        $words = preg_split('/\s+/u', trim(preg_replace('/[+\-><()~*:"@&|]/u', ' ', $term) ?? '')) ?: [];
+
+        $clean = array_values(array_filter($words, fn (string $w): bool => mb_strlen($w) > 0));
+
+        return implode(' ', array_map(fn (string $w): string => '+'.$w.'*', $clean));
+    }
+
     private function escapeLike(string $term): string
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term);

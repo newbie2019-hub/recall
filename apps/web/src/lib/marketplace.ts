@@ -177,7 +177,16 @@ export const REPORT_REASONS = {
 
 export type ReportReason = keyof typeof REPORT_REASONS
 
+/**
+ * Whoever else is looking at this report right now.
+ *
+ * A soft claim with an expiry rather than an assignment: a moderator who claims
+ * three reports and shuts their laptop must not park them, and an explicit
+ * release is the step everybody forgets.
+ */
 export interface ModerationReport {
+  claimed_by?: { id: string; name: string } | null
+  mine?: boolean
   id: string
   /** A publisher answering their own takedown files the same shape. */
   kind: 'report' | 'counter_notice'
@@ -190,7 +199,8 @@ export interface ModerationReport {
 
 export interface Page<T> {
   items: T[]
-  next_cursor: number | null
+  /** Opaque: an offset where the list is offset-paged, a key where it is not. */
+  next_cursor: number | string | null
 }
 
 // ── transport ─────────────────────────────────────────────────────────────
@@ -267,7 +277,7 @@ function codeForStatus(status: number) {
 export interface BrowseQuery {
   q?: string
   tag?: string
-  cursor?: number | null
+  cursor?: number | string | null
 }
 
 export async function listListings(query: BrowseQuery = {}): Promise<Page<Listing>> {
@@ -409,12 +419,24 @@ export const reportListing = (
   )
 
 /** 403 for anyone who is not a moderator — which is how the page knows. */
-export async function openReports(cursor?: number | null): Promise<Page<ModerationReport>> {
+export async function openReports(cursor?: number | string | null): Promise<Page<ModerationReport>> {
   const envelope = await envelopeOf<ModerationReport[]>('moderation/reports', {
     query: { cursor: cursor ?? undefined },
   })
   return { items: envelope.data, next_cursor: envelope.next_cursor ?? null }
 }
+
+/** Take a report. Refused when somebody else holds it. */
+export const claimReport = (reportId: string) =>
+  call<{ claimed: boolean }>(`moderation/reports/${encodeURIComponent(reportId)}/claim`, {
+    method: 'POST',
+  })
+
+/** Hand it back. */
+export const releaseReport = (reportId: string) =>
+  call<{ claimed: boolean }>(`moderation/reports/${encodeURIComponent(reportId)}/claim`, {
+    method: 'DELETE',
+  })
 
 export const dismissReport = (reportId: string, note: string) =>
   call<{ id: string; status: string }>(
