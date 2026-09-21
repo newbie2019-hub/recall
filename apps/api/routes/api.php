@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CollaborationController;
 use App\Http\Controllers\Api\V1\DeviceController;
 use App\Http\Controllers\Api\V1\DocumentController;
+use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\ImportController;
 use App\Http\Controllers\Api\V1\ListingController;
 use App\Http\Controllers\Api\V1\MediaController;
@@ -130,6 +131,36 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::get('sync', [SyncController::class, 'pull'])->name('sync.pull');
     Route::post('sync', [SyncController::class, 'push'])->name('sync.push');
+
+    /*
+     * Friends, presence and the weekly board (Phase 14d).
+     *
+     * `friends` returns accepted friends and both directions of pending in one
+     * call, because the screen shows all three together. Presence rides on
+     * `TouchLastSeen` rather than a channel — there is no websocket here.
+     *
+     * `store` carries the same throttle as a collaborator invitation, and for
+     * the same reason: it is a request addressed to an email, so its limit is
+     * what stops the endpoint being used to walk an address list. `accept` is
+     * loose because it is a button somebody presses once per friend.
+     */
+    Route::get('friends', [FriendController::class, 'index'])->name('friends.index');
+
+    Route::get('friends/leaderboard', [FriendController::class, 'leaderboard'])
+        ->name('friends.leaderboard');
+
+    Route::post('friends', [FriendController::class, 'store'])
+        ->middleware('throttle:20,60')
+        ->name('friends.store');
+
+    Route::post('friends/{friendship}/accept', [FriendController::class, 'accept'])
+        ->middleware('throttle:60,1')
+        ->name('friends.accept');
+
+    // Declining a request and removing a friend are the same row, so they are
+    // the same call. Two verbs would be two chances to delete the wrong one.
+    Route::delete('friends/{friendship}', [FriendController::class, 'destroy'])
+        ->name('friends.destroy');
 
     // Upload once, poll until it is done. The throttle is on the upload only:
     // polling is the client's normal state and must not be rate-limited into

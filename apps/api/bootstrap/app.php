@@ -2,6 +2,7 @@
 
 use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
+use App\Http\Middleware\TouchLastSeen;
 use App\Http\Middleware\TouchTokenExpiry;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -29,6 +30,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(append: [
             TouchTokenExpiry::class,
+            // Presence, written at most once a minute per account. It is here
+            // rather than on a channel because the app's own traffic is the
+            // only heartbeat the green dot ever needed.
+            TouchLastSeen::class,
         ]);
 
         // Sync carries a collection, not a form.

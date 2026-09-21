@@ -28,6 +28,9 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            // Phase 14d: presence. Compared against a window, never rendered
+            // raw, so it has to come back as a date rather than a string.
+            'last_seen_at' => 'datetime',
             'sync_revision' => 'integer',
             // Phase 10: the period window is compared as a date, never parsed
             // from a string at the call site.
