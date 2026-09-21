@@ -289,6 +289,56 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_note_grades_tier ON note_grades(tier);
   `,
+
+  // 10 - decisions a person made about scheduling, and when things were added
+  `
+  -- Two scheduling decisions that belong to the person rather than to FSRS.
+  --
+  -- Why these are columns on \`cards\` and not a table of their own: sync sends
+  -- only the card columns somebody *decided* (suspended, buried, flag, deck) and
+  -- deliberately withholds due/stability/state, because those are a cache every
+  -- device rebuilds from the review log. A date you picked and a card you reset
+  -- are decisions, so they belong on exactly that side of the line — and adding
+  -- them here is what makes them travel. Before this, "set due date" wrote
+  -- \`cards.due\` and the date never left the device that chose it.
+  --
+  -- \`replayReviews\` applies both at the end of the fold, so the log stays the
+  -- source of truth and these stay corrections layered on top of it.
+  ALTER TABLE cards ADD COLUMN due_override INTEGER;
+  ALTER TABLE cards ADD COLUMN forgotten_at INTEGER;
+
+  -- When a note and a card were made.
+  --
+  -- Anki gets this free because its ids *are* millisecond timestamps. Ours are
+  -- random UUIDs, so without a column the question is unanswerable — which is
+  -- what blocked \`added:\` searches and an added-cards graph.
+  --
+  -- Backfilled from the first review, because that is the only evidence left of
+  -- when a card already in the collection began. A card that has never been
+  -- reviewed has no evidence at all, so it falls back to the note's
+  -- \`updated_at\`: wrong for anything edited since, and the closest honest
+  -- answer available. Everything added from here on is exact.
+  ALTER TABLE notes ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE cards ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+
+  UPDATE cards SET created_at = COALESCE(
+    (SELECT MIN(r.ts) FROM reviews r WHERE r.card_id = cards.id),
+    (SELECT n.updated_at FROM notes n WHERE n.id = cards.note_id),
+    0);
+
+  UPDATE notes SET created_at = COALESCE(
+    (SELECT MIN(c.created_at) FROM cards c WHERE c.note_id = notes.id AND c.created_at > 0),
+    updated_at,
+    0);
+
+  CREATE INDEX idx_notes_created ON notes(created_at);
+  CREATE INDEX idx_cards_created ON cards(created_at);
+
+  -- Auto-advance, per deck and off by default (0 = off, as in Anki). Seconds,
+  -- because that is the unit the person types.
+  ALTER TABLE decks ADD COLUMN auto_reveal_seconds INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE decks ADD COLUMN auto_next_seconds INTEGER NOT NULL DEFAULT 0;
+  `,
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

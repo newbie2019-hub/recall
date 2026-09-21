@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'id', 'user_id', 'guid', 'note_type_id', 'deck_id', 'fields', 'tags',
-    'fma_id', 'checksum', 'revision', 'client_updated_at', 'deleted_at',
+    'fma_id', 'checksum', 'revision', 'client_updated_at', 'client_created_at',
+    'deleted_at',
 ])]
 class Note extends Model
 {
@@ -21,6 +22,7 @@ class Note extends Model
             'fields' => 'array',
             'checksum' => 'integer',
             'client_updated_at' => 'integer',
+            'client_created_at' => 'integer',
             'revision' => 'integer',
             'deleted_at' => 'datetime',
         ];

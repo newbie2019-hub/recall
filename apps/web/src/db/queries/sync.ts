@@ -43,13 +43,14 @@ export interface NoteTypeLocal {
 export interface NoteLocal {
   id: string; guid: string; note_type: string; deck_id: string
   fields: string; tags: string; fma_id: string | null
-  checksum: number | null; updated_at: number
+  checksum: number | null; updated_at: number; created_at: number
 }
 
 export interface CardStateLocal {
   id: string; note_id: string; ord: number; suspended: number
   buried_until: number | null; flag: number; deck_id: string | null
   original_deck_id: string | null
+  due_override: number | null; forgotten_at: number | null
   state_updated_at: number
 }
 
@@ -138,14 +139,20 @@ export async function collectLocal(since: number): Promise<LocalBatch> {
          FROM note_types WHERE updated_at > ?`, [since],
     ),
     db.select<NoteLocal>(
-      `SELECT id, guid, note_type, deck_id, fields, tags, fma_id, checksum, updated_at
+      `SELECT id, guid, note_type, deck_id, fields, tags, fma_id, checksum, updated_at,
+              created_at
          FROM notes WHERE updated_at > ?`, [since],
     ),
     // `cards`, but only the columns a person decided. due/stability/state are a
     // derived cache and are not the server's business (PHASES §5).
+    //
+    // `due_override` and `forgotten_at` sit on the *decided* side of that line
+    // and so they travel: a date you picked and a card you reset are choices,
+    // not model output, and before migration 10 neither left the device that
+    // made it.
     db.select<CardStateLocal>(
       `SELECT id, note_id, ord, suspended, buried_until, flag, deck_id, original_deck_id,
-              state_updated_at
+              due_override, forgotten_at, state_updated_at
          FROM cards WHERE state_updated_at > ?`, [since],
     ),
     db.select<ReviewLocal>(
@@ -272,7 +279,7 @@ export async function putNotes(rows: NoteLocal[]): Promise<void> {
       fields: JSON.parse(n.fields) as Record<string, string>,
       tags: n.tags ? n.tags.split(' ') : [],
       fmaId: n.fma_id,
-    }, n.updated_at)
+    }, n.updated_at, n.created_at)
   }
 }
 
@@ -285,26 +292,41 @@ export async function putNotes(rows: NoteLocal[]): Promise<void> {
 const PUT_CARD_STATE = `INSERT INTO cards
     (id, note_id, ord, due, stability, difficulty, state, learning_steps, reps,
      lapses, last_review, suspended, buried_until, flag, deck_id, original_deck_id,
-     state_updated_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     due_override, forgotten_at, created_at, state_updated_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   ON CONFLICT(id) DO UPDATE SET
     suspended = excluded.suspended, buried_until = excluded.buried_until,
     flag = excluded.flag, deck_id = excluded.deck_id,
     original_deck_id = excluded.original_deck_id,
+    due_override = excluded.due_override, forgotten_at = excluded.forgotten_at,
     state_updated_at = excluded.state_updated_at
   WHERE excluded.state_updated_at > cards.state_updated_at`
 
-export const putCardStates = (rows: CardStateLocal[]): Promise<void> =>
-  db.batch(rows.map((c) => {
+/**
+ * `created_at` is on the insert and not on the `DO UPDATE` list: a card state
+ * arriving for a card this device has not generated yet has to say when the
+ * card was added, but an existing card's birthday is not the pushing device's
+ * to move.
+ */
+export async function putCardStates(rows: CardStateLocal[]): Promise<void> {
+  if (!rows.length) return
+  await db.batch(rows.map((c) => {
     const fresh = newCard(c.id, c.note_id, c.ord, c.state_updated_at)
     return {
       sql: PUT_CARD_STATE,
       params: [c.id, c.note_id, c.ord, fresh.due, fresh.stability, fresh.difficulty,
                fresh.state, fresh.learning_steps, fresh.reps, fresh.lapses, fresh.last_review,
                c.suspended, c.buried_until, c.flag, c.deck_id, c.original_deck_id,
-               c.state_updated_at],
+               c.due_override, c.forgotten_at, c.state_updated_at, c.state_updated_at],
     }
   }))
+
+  // An override that just changed makes the cache wrong until it is rebuilt,
+  // and nothing else in the pull will do it: `putReviews` only replays cards
+  // whose *log* moved, and a forget pushed from another device moves neither.
+  await replayCards(rows.filter((c) => c.due_override != null || c.forgotten_at != null)
+    .map((c) => c.id))
+}
 
 /**
  * Pulled reviews land in the log and the cards they touch are replayed.
@@ -335,8 +357,12 @@ const UPDATE_CARD = `UPDATE cards SET due=?, stability=?, difficulty=?, state=?,
  */
 async function replayCards(cardIds: string[]): Promise<void> {
   for (const ids of chunked(cardIds)) {
-    const meta = await db.select<{ id: string; note_id: string; ord: number; retention_target: number }>(
-      `SELECT c.id, c.note_id, c.ord, d.retention_target
+    const meta = await db.select<{
+      id: string; note_id: string; ord: number; retention_target: number
+      created_at: number; due_override: number | null; forgotten_at: number | null
+    }>(
+      `SELECT c.id, c.note_id, c.ord, c.created_at, c.due_override, c.forgotten_at,
+              d.retention_target
          FROM cards c
          JOIN notes n ON n.id = c.note_id
          JOIN decks d ON d.id = COALESCE(c.deck_id, n.deck_id)
@@ -348,9 +374,13 @@ async function replayCards(cardIds: string[]): Promise<void> {
     )
     await db.batch(meta.map((m) => {
       const own = log.filter((r) => r.card_id === m.id)
+      // The overrides are read from the row rather than passed in, because the
+      // reviews and the override can arrive in either order — a forget pulled
+      // before the answers it forgets still has to win.
       const card = replayReviews(
         { id: m.id, note_id: m.note_id, ord: m.ord },
-        own, m.retention_target, own[0]?.ts ?? Date.now(),
+        own, m.retention_target, m.created_at || own[0]?.ts || Date.now(),
+        { due_override: m.due_override, forgotten_at: m.forgotten_at },
       )
       return {
         sql: UPDATE_CARD,

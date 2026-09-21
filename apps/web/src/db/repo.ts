@@ -14,6 +14,7 @@ import {
   newGuid,
   Rating,
   replayReviews,
+  type SchedulingOverride,
   safeDeckName,
   splitDeckPath,
   stripHtml,
@@ -37,16 +38,45 @@ const id = () => crypto.randomUUID()
  */
 export const cardId = (noteId: string, ord: number) => `${noteId}:${ord}`
 
-type CardRow = Omit<Card, 'suspended'> & { suspended: number }
+type CardRow = Omit<Card, 'suspended'> & {
+  suspended: number
+  created_at?: number
+  due_override?: number | null
+  forgotten_at?: number | null
+}
 const toCard = (r: CardRow): Card => ({ ...r, suspended: !!r.suspended })
 
-const INSERT_CARD = `INSERT INTO cards (id, note_id, ord, due, stability, difficulty, state,
-    learning_steps, reps, lapses, last_review, suspended, buried_until, flag, deck_id)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,0,NULL,0,?)`
+/** The two columns `replayReviews` needs, read off a row that has them. */
+const overrideFrom = (r: {
+  due_override?: number | null; forgotten_at?: number | null
+}): SchedulingOverride => ({
+  due_override: r.due_override ?? null,
+  forgotten_at: r.forgotten_at ?? null,
+})
 
-const insertParams = (c: Card, deckOverride: string | null = null) => [
+const INSERT_CARD = `INSERT INTO cards (id, note_id, ord, due, stability, difficulty, state,
+    learning_steps, reps, lapses, last_review, suspended, buried_until, flag, deck_id,
+    created_at, due_override, forgotten_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,0,NULL,0,?,?,?,?)`
+
+/**
+ * What an insert needs that the FSRS state does not carry.
+ *
+ * `createdAt` cannot be read off the card: a new card's `due` is its creation
+ * time, but a replayed one's is somewhere in the future, so the caller has to
+ * say. Where a card is being rebuilt from history, its first review is the
+ * honest answer and the same one migration 10 backfills with.
+ */
+interface CardExtra {
+  deckOverride?: string | null
+  createdAt: number
+  override?: SchedulingOverride
+}
+
+const insertParams = (c: Card, x: CardExtra) => [
   c.id, c.note_id, c.ord, c.due, c.stability, c.difficulty, c.state,
-  c.learning_steps, c.reps, c.lapses, c.last_review, deckOverride,
+  c.learning_steps, c.reps, c.lapses, c.last_review, x.deckOverride ?? null,
+  x.createdAt, x.override?.due_override ?? null, x.override?.forgotten_at ?? null,
 ]
 
 const UPDATE_CARD = `UPDATE cards SET due=?, stability=?, difficulty=?, state=?,
@@ -411,11 +441,19 @@ export async function changeNoteType(
       // Every card first, then the survivors back: the ids are derived from the
       // ordinal, so a swap would otherwise collide with a row still standing.
       { sql: 'DELETE FROM cards WHERE note_id = ?', params: [n.id] },
+      // The row is deleted and written back, so anything not in `Card` has to
+      // be carried by hand: when it was added, and any scheduling the person
+      // chose. Losing either would make changing a note type quietly reset
+      // things nobody asked to reset.
       ...kept.map(({ card, ord }) => ({
         sql: INSERT_CARD,
         params: insertParams(
           { ...toCard(card), id: cardId(n.id, ord), ord },
-          overrideOf(to, ord),
+          {
+            deckOverride: overrideOf(to, ord),
+            createdAt: card.created_at ?? now,
+            override: overrideFrom(card),
+          },
         ),
       })),
 
@@ -823,15 +861,21 @@ export interface SaveNote {
 }
 
 /** Create or update a note, then bring its cards in line with the templates. */
-export async function saveNote(input: SaveNote, now = Date.now()): Promise<string> {
+export async function saveNote(
+  input: SaveNote,
+  now = Date.now(),
+  /** A creation time the caller already knows — a pulled note keeps its own. */
+  createdAt?: number,
+): Promise<string> {
   const types = await noteTypes()
   const nt = types.find((t) => t.id === input.noteTypeId)
   if (!nt) throw new Error(`Unknown note type: ${input.noteTypeId}`)
 
   const noteId = input.id ?? id()
   await db.run(
-    `INSERT INTO notes (id, guid, note_type, deck_id, fields, tags, fma_id, checksum, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?)
+    `INSERT INTO notes (id, guid, note_type, deck_id, fields, tags, fma_id, checksum,
+                        updated_at, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        note_type = excluded.note_type, deck_id = excluded.deck_id,
        fields = excluded.fields, tags = excluded.tags,
@@ -839,10 +883,12 @@ export async function saveNote(input: SaveNote, now = Date.now()): Promise<strin
        updated_at = excluded.updated_at`,
     // `guid` is deliberately absent from the DO UPDATE list: it is minted once
     // and never rewritten, because it is what an importer matches this note by
-    // for the rest of its life (CARDS.md §4.5).
+    // for the rest of its life (CARDS.md §4.5). `created_at` is absent for the
+    // same shape of reason — editing a note is not adding one, and a sync that
+    // rewrote it would make "added this week" mean "touched this week".
     [noteId, input.guid ?? newGuid(), nt.id, input.deckId, JSON.stringify(input.fields),
      (input.tags ?? []).join(' '), input.fmaId ?? null,
-     fieldChecksum(firstFieldOf(nt.fields, input.fields)), now],
+     fieldChecksum(firstFieldOf(nt.fields, input.fields)), now, createdAt ?? now],
   )
 
   await regenerateCards(noteId, nt, input.fields, input.deckId, now)
@@ -950,7 +996,14 @@ async function regenerateCards(
     const card = own.length
       ? replayReviews({ id: cid, note_id: noteId, ord }, own, retention, own[0]!.ts)
       : newCard(cid, noteId, ord, now)
-    stmts.push({ sql: INSERT_CARD, params: insertParams(card, override) })
+    stmts.push({
+      sql: INSERT_CARD,
+      params: insertParams(card, {
+        deckOverride: override,
+        // A card coming back from the log was added when its history starts.
+        createdAt: own[0]?.ts ?? now,
+      }),
+    })
   }
 
   for (const h of extra)
@@ -1156,8 +1209,12 @@ export async function undoLast(): Promise<boolean> {
   )
   if (!last) return false
 
-  const [meta] = await db.select<{ note_id: string; ord: number; retention_target: number }>(
-    `SELECT c.note_id, c.ord, d.retention_target
+  const [meta] = await db.select<{
+    note_id: string; ord: number; retention_target: number
+    created_at: number; due_override: number | null; forgotten_at: number | null
+  }>(
+    `SELECT c.note_id, c.ord, c.created_at, c.due_override, c.forgotten_at,
+            d.retention_target
        FROM cards c JOIN notes n ON n.id = c.note_id
        JOIN decks d ON d.id = ${DECK_OF}
       WHERE c.id = ?`,
@@ -1170,24 +1227,28 @@ export async function undoLast(): Promise<boolean> {
     `SELECT * FROM reviews WHERE card_id = ? ORDER BY ts`,
     [last.card_id],
   )
+  // The overrides come along: undoing an answer must not also undo a due date
+  // somebody set or a forget they asked for.
   const rebuilt = replayReviews(
     { id: last.card_id, note_id: meta.note_id, ord: meta.ord },
     remaining,
     meta.retention_target,
-    remaining[0]?.ts ?? Date.now(),
+    meta.created_at ?? remaining[0]?.ts ?? Date.now(),
+    overrideFrom(meta),
   )
   await db.run(UPDATE_CARD, updateParams(rebuilt))
   return true
 }
 
 /**
- * The three writes that are a *decision* rather than a derived value.
+ * The writes that are a *decision* rather than a derived value.
  *
- * `suspended`, `buried_until`, `flag` and `deck_id` are the `card_states`
- * subset that syncs — everything else in `cards` is FSRS output that
- * `replayReviews()` rebuilds. Each one stamps `state_updated_at`, which is what
- * the push loop reads to find them: without the stamp a suspend made here is
- * invisible to sync and simply never leaves the device.
+ * `suspended`, `buried_until`, `flag`, `deck_id` and — since migration 10 —
+ * `due_override` and `forgotten_at` are the `card_states` subset that syncs;
+ * everything else in `cards` is FSRS output that `replayReviews()` rebuilds.
+ * Each one stamps `state_updated_at`, which is what the push loop reads to find
+ * them: without the stamp a suspend made here is invisible to sync and simply
+ * never leaves the device.
  */
 export const setFlag = (cardId: string, flag: number, now = Date.now()) =>
   db.run(`UPDATE cards SET flag = ?, state_updated_at = ? WHERE id = ?`, [flag, now, cardId])
@@ -1201,6 +1262,82 @@ export const bury = (cardId: string, now = Date.now()) =>
     now,
     cardId,
   ])
+
+/**
+ * Rebuild one card's cache from its log and whatever overrides it now carries.
+ *
+ * Every override write goes through here rather than computing the new state
+ * itself, so there is exactly one expression of what an override *means* and
+ * `replayReviews` remains the only thing that knows.
+ */
+async function replayOne(cardId: string, now: number): Promise<void> {
+  const [meta] = await db.select<{
+    note_id: string; ord: number; retention_target: number
+    created_at: number; due_override: number | null; forgotten_at: number | null
+  }>(
+    `SELECT c.note_id, c.ord, c.created_at, c.due_override, c.forgotten_at,
+            d.retention_target
+       FROM cards c JOIN notes n ON n.id = c.note_id
+       JOIN decks d ON d.id = ${DECK_OF}
+      WHERE c.id = ?`,
+    [cardId],
+  )
+  if (!meta) return
+
+  const log = await db.select<Review>(
+    `SELECT * FROM reviews WHERE card_id = ? ORDER BY ts`, [cardId],
+  )
+  await db.run(UPDATE_CARD, updateParams(replayReviews(
+    { id: cardId, note_id: meta.note_id, ord: meta.ord },
+    log,
+    meta.retention_target,
+    meta.created_at || log[0]?.ts || now,
+    overrideFrom(meta),
+  )))
+}
+
+/**
+ * Forget a card: put it back to new, without deleting anything.
+ *
+ * Anki's version throws the card's history away. Ours cannot and should not —
+ * the log is append-only (README, rule 1), and those answers really happened,
+ * so true retention and any future FSRS optimisation are still entitled to
+ * them. Instead the card stops *descending* from them: `forgotten_at` moves
+ * where the replay begins, and everything before it is history the collection
+ * keeps and this card no longer has.
+ *
+ * The due override is cleared in the same write, because a card that is new
+ * again has no date somebody picked — leaving one would schedule a card that
+ * is meant to be waiting in the new queue.
+ */
+export const forget = (cardId: string, now = Date.now()) =>
+  db.run(
+    `UPDATE cards SET forgotten_at = ?, due_override = NULL, state_updated_at = ?
+      WHERE id = ?`,
+    [now, now, cardId],
+  ).then(() => replayOne(cardId, now))
+
+/**
+ * Show this card again in `days` days.
+ *
+ * Deliberately **not** a review: a date somebody picked is not an answer
+ * somebody gave, and minting a rating to carry it would poison every retention
+ * figure that reads the log afterwards. It writes the override instead, which
+ * is what makes it both durable against a replay and visible to other devices.
+ */
+export const setDueDate = (cardId: string, days: number, now = Date.now()) =>
+  db.run(
+    `UPDATE cards SET due_override = ?, state_updated_at = ? WHERE id = ?`,
+    [now + days * 86_400_000, now, cardId],
+  ).then(() => replayOne(cardId, now))
+
+/** Back to whatever the log says, as if neither had been used. */
+export const clearDueDate = (cardId: string, now = Date.now()) =>
+  db.run(
+    `UPDATE cards SET due_override = NULL, state_updated_at = ? WHERE id = ?`,
+    [now, cardId],
+  ).then(() => replayOne(cardId, now))
+
 
 const tomorrow = () => {
   const d = new Date()
@@ -1231,14 +1368,18 @@ export async function seedIfEmpty() {
       // The guid is not optional here either: a seeded note that reaches an
       // export with none has no identity to carry, and the collection it lands
       // in cannot match it on the way back (CARDS.md §4.5).
-      sql: `INSERT INTO notes (id, guid, note_type, deck_id, fields, tags, fma_id, checksum, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?)`,
+      sql: `INSERT INTO notes (id, guid, note_type, deck_id, fields, tags, fma_id, checksum,
+                               updated_at, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`,
       params: [noteId, newGuid(), nt.id, note.deck, JSON.stringify(note.fields),
                (note.tags ?? []).join(' '), note.fma ?? null,
-               fieldChecksum(firstFieldOf(nt.fields, note.fields)), now],
+               fieldChecksum(firstFieldOf(nt.fields, note.fields)), now, now],
     })
     for (const ord of generatedOrds(nt, note.fields))
-      stmts.push({ sql: INSERT_CARD, params: insertParams(newCard(cardId(noteId, ord), noteId, ord, now)) })
+      stmts.push({
+        sql: INSERT_CARD,
+        params: insertParams(newCard(cardId(noteId, ord), noteId, ord, now), { createdAt: now }),
+      })
   }
 
   await db.batch(stmts)
@@ -1322,14 +1463,20 @@ export async function importNotes(
     if (!known.has(note.guid)) added++
 
     stmts.push({
-      sql: `INSERT INTO notes (id, guid, note_type, deck_id, fields, tags, fma_id, checksum, updated_at)
-            VALUES (?,?,?,?,?,?,NULL,?,?)
+      sql: `INSERT INTO notes (id, guid, note_type, deck_id, fields, tags, fma_id, checksum,
+                               updated_at, created_at)
+            VALUES (?,?,?,?,?,?,NULL,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
               note_type = excluded.note_type, deck_id = excluded.deck_id,
               fields = excluded.fields, tags = excluded.tags,
               checksum = excluded.checksum, updated_at = excluded.updated_at`,
+      // An imported note keeps the file's modification time as its creation
+      // time. Anki's note id is the real answer and we do not carry it, so this
+      // is the closest evidence in the file — and it is only used on insert, so
+      // re-importing never moves a note's birthday.
       params: [noteId, note.guid, nt.id, note.deckId, JSON.stringify(note.fields),
-               note.tags.join(' '), fieldChecksum(firstFieldOf(nt.fields, note.fields)), note.mod],
+               note.tags.join(' '), fieldChecksum(firstFieldOf(nt.fields, note.fields)),
+               note.mod, note.mod],
     })
 
     // A review id derived from the card and the timestamp, so importing the
@@ -1372,7 +1519,10 @@ export async function importNotes(
         // because its scheduling is the user's and the import knows nothing
         // about it.
         if (have.some((h) => h.ord === ord)) continue
-        stmts.push({ sql: INSERT_CARD, params: insertParams(newCard(cid, noteId, ord, now), deckOverride) })
+        stmts.push({
+          sql: INSERT_CARD,
+          params: insertParams(newCard(cid, noteId, ord, now), { deckOverride, createdAt: now }),
+        })
         continue
       }
       // Replaying the whole log rather than trusting Anki's interval is the
@@ -1382,7 +1532,12 @@ export async function importNotes(
       stmts.push(
         have.some((h) => h.ord === ord)
           ? { sql: UPDATE_CARD_DECK, params: [...updateParams(card).slice(0, -1), deckOverride, cid] }
-          : { sql: INSERT_CARD, params: insertParams(card, deckOverride) },
+          : {
+            sql: INSERT_CARD,
+            // An imported card was added when the history says it was, not
+            // when the file happened to be opened.
+            params: insertParams(card, { deckOverride, createdAt: own[0]!.ts }),
+          },
       )
     }
 

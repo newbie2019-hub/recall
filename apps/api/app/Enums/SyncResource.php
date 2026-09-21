@@ -56,13 +56,22 @@ enum SyncResource: string
                 'id', 'name', 'fields', 'templates', 'css', 'kind', 'ord_field',
                 'sort_field', 'field_config', 'anki_extra', 'builtin',
             ],
-            self::Notes => ['id', 'guid', 'note_type_id', 'deck_id', 'fields', 'tags', 'fma_id', 'checksum'],
+            // `client_created_at` is the client's own, like `client_updated_at`:
+            // the table already has Laravel's `created_at` and that one is ours.
+            self::Notes => [
+                'id', 'guid', 'note_type_id', 'deck_id', 'fields', 'tags', 'fma_id',
+                'checksum', 'client_created_at',
+            ],
             // `original_deck_id` travels with `deck_id` or neither means
             // anything: a borrowed card that arrives without its home cannot be
             // sent back when the filtered deck empties (Phase 7).
+            //
+            // `due_override` and `forgotten_at` are here for the reason the
+            // whole table exists: they are decisions, not schedule. The FSRS
+            // cache still never crosses — the client rebuilds it from the log.
             self::CardStates => [
                 'id', 'note_id', 'ord', 'suspended', 'buried_until', 'flag',
-                'deck_id', 'original_deck_id',
+                'deck_id', 'original_deck_id', 'due_override', 'forgotten_at',
             ],
             self::Reviews => ['id', 'card_id', 'client_ts', 'rating', 'duration_ms', 'imported'],
             self::Media => ['sha256', 'mime', 'size'],

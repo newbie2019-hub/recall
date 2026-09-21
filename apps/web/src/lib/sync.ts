@@ -76,10 +76,13 @@ const noteTypeDown = (c: SyncChange): NoteTypeLocal => ({
   builtin: bit(c.builtin), updated_at: Number(c.client_updated_at),
 })
 
+// `client_created_at` rather than `created_at`: the server's `notes` table has
+// Laravel's own `created_at`, and the existing `client_updated_at` is the
+// convention for "the client's timestamp, not ours".
 const noteUp = (n: NoteLocal): SyncRow => ({
   id: n.id, guid: n.guid, note_type_id: n.note_type, deck_id: n.deck_id,
   fields: json(n.fields, {}), tags: n.tags, fma_id: n.fma_id, checksum: n.checksum,
-  client_updated_at: n.updated_at,
+  client_updated_at: n.updated_at, client_created_at: n.created_at,
 })
 
 const noteDown = (c: SyncChange): NoteLocal => ({
@@ -88,6 +91,10 @@ const noteDown = (c: SyncChange): NoteLocal => ({
   tags: String(c.tags ?? ''), fma_id: str(c.fma_id),
   checksum: c.checksum == null ? null : Number(c.checksum),
   updated_at: Number(c.client_updated_at),
+  // Rows pushed before migration 10 have no creation time on the server. The
+  // modification time is the same fallback the migration backfills with, and
+  // it is exact for anything never edited.
+  created_at: Number(c.client_created_at ?? c.client_updated_at),
 })
 
 /**
@@ -99,6 +106,7 @@ const cardStateUp = (c: CardStateLocal): SyncRow => ({
   id: c.id, note_id: c.note_id, ord: c.ord, suspended: !!c.suspended,
   buried_until: c.buried_until, flag: c.flag, deck_id: c.deck_id,
   original_deck_id: c.original_deck_id,
+  due_override: c.due_override, forgotten_at: c.forgotten_at,
   client_updated_at: c.state_updated_at,
 })
 
@@ -108,6 +116,8 @@ const cardStateDown = (c: SyncChange): CardStateLocal => ({
   buried_until: c.buried_until == null ? null : Number(c.buried_until),
   flag: Number(c.flag ?? 0), deck_id: str(c.deck_id),
   original_deck_id: str(c.original_deck_id),
+  due_override: c.due_override == null ? null : Number(c.due_override),
+  forgotten_at: c.forgotten_at == null ? null : Number(c.forgotten_at),
   state_updated_at: Number(c.client_updated_at),
 })
 

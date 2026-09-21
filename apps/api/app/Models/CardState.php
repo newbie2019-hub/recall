@@ -12,7 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 #[Fillable([
     'id', 'user_id', 'note_id', 'ord', 'suspended', 'buried_until', 'flag',
-    'deck_id', 'revision', 'client_updated_at', 'deleted_at',
+    'deck_id', 'original_deck_id', 'due_override', 'forgotten_at',
+    'revision', 'client_updated_at', 'deleted_at',
 ])]
 class CardState extends Model
 {
@@ -25,6 +26,8 @@ class CardState extends Model
             'suspended' => 'boolean',
             'buried_until' => 'integer',
             'flag' => 'integer',
+            'due_override' => 'integer',
+            'forgotten_at' => 'integer',
             'client_updated_at' => 'integer',
             'revision' => 'integer',
             'deleted_at' => 'datetime',

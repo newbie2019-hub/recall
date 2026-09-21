@@ -245,6 +245,138 @@ class SyncTest extends TestCase
         $this->assertSame('{{Front}}', $pulledType['templates'][0]['qfmt']);
     }
 
+    public function test_an_empty_string_in_a_pushed_row_stays_an_empty_string(): void
+    {
+        // The bug: Laravel converts "" to null on every request, which is right
+        // for a human leaving a field blank and wrong for a device reporting a
+        // row. All seven built-in note types ship with `css: ''`, so the first
+        // sync of a brand-new account pushed a NULL into a NOT NULL column and
+        // got a 500 — on the one endpoint with no other way to make progress.
+        // A note with no tags failed identically.
+        //
+        // Every fixture in this file used to carry non-empty text, which is
+        // exactly why nothing caught it. This one is deliberately empty.
+        $deck = $this->deck('Thorax', 1_700_000_100_000);
+        $noteType = [
+            'id' => (string) Str::uuid(),
+            'name' => 'Basic',
+            'fields' => ['Front', 'Back'],
+            'templates' => [['name' => 'Card 1', 'qfmt' => '{{Front}}', 'afmt' => '{{Back}}']],
+            'css' => '',
+            'kind' => 'standard',
+            'sort_field' => 0,
+            'field_config' => [],
+            'anki_extra' => [],
+            'builtin' => true,
+            'client_updated_at' => 1_700_000_100_000,
+        ];
+        $note = [
+            'id' => (string) Str::uuid(),
+            'guid' => 'abc12345',
+            'note_type_id' => $noteType['id'],
+            'deck_id' => $deck['id'],
+            'fields' => ['Front' => 'mitral valve', 'Back' => ''],
+            'tags' => '',
+            'client_updated_at' => 1_700_000_100_000,
+        ];
+
+        $this->push(['decks' => [$deck], 'note_types' => [$noteType], 'notes' => [$note]])->assertOk();
+
+        $pulled = $this->pull()->assertOk()->json('data');
+        $this->assertSame('', $pulled['note_types'][0]['css']);
+        $this->assertSame('', $pulled['notes'][0]['tags']);
+        $this->assertSame('', $pulled['notes'][0]['fields']['Back']);
+    }
+
+    public function test_a_chosen_due_date_and_a_forget_reach_the_other_device(): void
+    {
+        // The bug this exists for: `card_states` carries only what a person
+        // decided, which is right — but "set due date" wrote the local FSRS
+        // cache instead, so a date chosen on a laptop was invisible to the
+        // phone, which rebuilds every schedule from the review log. A forget
+        // would have vanished the same way.
+        $deck = $this->deck('Thorax', 1_700_000_100_000);
+        $cardState = [
+            'id' => 'note-1:0',
+            'note_id' => (string) Str::uuid(),
+            'ord' => 0,
+            'suspended' => false,
+            'flag' => 0,
+            'deck_id' => $deck['id'],
+            'due_override' => 1_800_000_000_000,
+            'forgotten_at' => 1_750_000_000_000,
+            'client_updated_at' => 1_700_000_200_000,
+        ];
+
+        $this->push(['decks' => [$deck], 'card_states' => [$cardState]])->assertOk();
+
+        $pulled = $this->pull()->assertOk()->json('data.card_states.0');
+        $this->assertSame(1_800_000_000_000, $pulled['due_override']);
+        $this->assertSame(1_750_000_000_000, $pulled['forgotten_at']);
+    }
+
+    public function test_clearing_an_override_travels_as_null_rather_than_being_ignored(): void
+    {
+        // A cleared override has to be a change like any other. If a null were
+        // dropped as "nothing to say", undoing a forget on one device would
+        // leave the card forgotten everywhere else, for good.
+        $deck = $this->deck('Thorax', 1_700_000_100_000);
+        $base = [
+            'id' => 'note-1:0',
+            'note_id' => (string) Str::uuid(),
+            'ord' => 0,
+            'suspended' => false,
+            'flag' => 0,
+            'deck_id' => $deck['id'],
+        ];
+
+        $this->push(['decks' => [$deck], 'card_states' => [
+            [...$base, 'forgotten_at' => 1_750_000_000_000, 'client_updated_at' => 1_700_000_200_000],
+        ]])->assertOk();
+
+        $this->push(['card_states' => [
+            [...$base, 'forgotten_at' => null, 'client_updated_at' => 1_700_000_300_000],
+        ]])->assertOk();
+
+        $this->assertNull($this->pull()->json('data.card_states.0.forgotten_at'));
+    }
+
+    public function test_a_notes_creation_time_is_its_own_and_not_the_servers(): void
+    {
+        $deck = $this->deck('Thorax', 1_700_000_100_000);
+        $noteType = [
+            'id' => (string) Str::uuid(),
+            'name' => 'Basic',
+            'fields' => ['Front', 'Back'],
+            'templates' => [['name' => 'Card 1', 'qfmt' => '{{Front}}', 'afmt' => '{{Back}}']],
+            'css' => '',
+            'kind' => 'standard',
+            'sort_field' => 0,
+            'field_config' => [],
+            'anki_extra' => [],
+            'builtin' => false,
+            'client_updated_at' => 1_700_000_100_000,
+        ];
+        $note = [
+            'id' => (string) Str::uuid(),
+            'guid' => 'abc12345',
+            'note_type_id' => $noteType['id'],
+            'deck_id' => $deck['id'],
+            'fields' => ['Front' => 'mitral valve', 'Back' => 'between LA and LV'],
+            'tags' => '',
+            // Added long before it was last edited: the whole point of the
+            // column is that "added" and "touched" are different questions.
+            'client_created_at' => 1_600_000_000_000,
+            'client_updated_at' => 1_700_000_100_000,
+        ];
+
+        $this->push(['decks' => [$deck], 'note_types' => [$noteType], 'notes' => [$note]])->assertOk();
+
+        $pulled = $this->pull()->assertOk()->json('data.notes.0');
+        $this->assertSame(1_600_000_000_000, $pulled['client_created_at']);
+        $this->assertSame(1_700_000_100_000, $pulled['client_updated_at']);
+    }
+
     public function test_an_imported_answer_keeps_its_own_date_instead_of_being_floored(): void
     {
         // A .apkg carries answers from years before this app existed. Flooring

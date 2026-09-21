@@ -30,6 +30,20 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             TouchTokenExpiry::class,
         ]);
+
+        // Sync carries a collection, not a form.
+        //
+        // Laravel turns `""` into `null` everywhere, which is right for a human
+        // leaving a field blank and wrong for a row a device is reporting: a
+        // note type with no CSS, a note with no tags and a cloze with an empty
+        // "Back Extra" all legitimately hold an empty string, and every one of
+        // them arrived here as NULL against a NOT NULL column. All seven
+        // built-in note types ship with `css: ''`, so this was a 500 on the
+        // first sync of a new account, on the one endpoint that has no other
+        // way to make progress.
+        $middleware->convertEmptyStringsToNull(except: [
+            fn (Request $request) => $request->is('api/v1/sync'),
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

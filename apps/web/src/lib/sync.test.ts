@@ -52,13 +52,17 @@ const seed: LocalBatch = {
   notes: [{
     id: 'note-1', guid: 'abcd1234', note_type: 'basic', deck_id: 'deck-1',
     fields: '{"Front":"heart","Back":"cor"}', tags: 'anatomy thorax',
-    fma_id: 'FMA:7088', checksum: 12345, updated_at: 1200,
+    fma_id: 'FMA:7088', checksum: 12345, updated_at: 1200, created_at: 900,
   }],
   card_states: [{
     // Borrowed by a filtered deck: deck_id is where it is now, original_deck_id
     // where it goes home to. The pair has to survive the round trip together.
     id: 'note-1:0', note_id: 'note-1', ord: 0, suspended: 1,
     buried_until: null, flag: 2, deck_id: 'deck-2', original_deck_id: 'deck-1',
+    // A date somebody picked and a card somebody reset. Before migration 10
+    // neither of these travelled, so "set due date" on a laptop was invisible
+    // to the phone — these two entries are the regression guard for that.
+    due_override: 1900, forgotten_at: 1800,
     state_updated_at: 1300,
   }],
   reviews: [{ id: 'rev-1', card_id: 'note-1:0', ts: 1400, rating: 3, duration_ms: 900, imported: 0 }],
@@ -135,7 +139,8 @@ await (async () => {
   check('review survives the round trip', local.applied.reviews, seed.reviews)
 
   check('local column names are translated', Object.keys(payload.notes?.[0] ?? {}).sort(),
-    ['checksum', 'client_updated_at', 'deck_id', 'fields', 'fma_id', 'guid', 'id', 'note_type_id', 'tags'])
+    ['checksum', 'client_created_at', 'client_updated_at', 'deck_id', 'fields', 'fma_id',
+     'guid', 'id', 'note_type_id', 'tags'])
   check('a review goes up as client_ts', payload.reviews?.[0], {
     id: 'rev-1', card_id: 'note-1:0', client_ts: 1400, rating: 3, duration_ms: 900, imported: false,
   })
@@ -144,8 +149,8 @@ await (async () => {
   // the server in an argument with replayReviews().
   check('card_states carries only what a person decided',
     Object.keys(payload.card_states?.[0] ?? {}).sort(),
-    ['buried_until', 'client_updated_at', 'deck_id', 'flag', 'id', 'note_id', 'ord',
-     'original_deck_id', 'suspended'])
+    ['buried_until', 'client_updated_at', 'deck_id', 'due_override', 'flag', 'forgotten_at',
+     'id', 'note_id', 'ord', 'original_deck_id', 'suspended'])
 
   check('media goes up as metadata', payload.media, [
     { sha256: 'ff00', mime: 'image/png', size: 12, client_updated_at: 1500 },
