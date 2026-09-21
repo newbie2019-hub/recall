@@ -12,13 +12,13 @@ assume one developer.
 [AI.md](AI.md)) · 11 ✅ (the debt that was already costing something, harvested
 from the tree rather than remembered) · 12 ✅ · 12.5 ✅ (Anki parity, picked by
 surveying the add-on ecosystem rather than by listing features) ·
-13 (mobile) deferred indefinitely at the product's request.
+13 (mobile) deferred indefinitely at the product's request · 14 ◻︎ (asked for,
+not yet built — see §14).
 
 **One thing is unpaid and it is not code:** nothing sets `email_verified_at`,
-so the marketplace cannot be published to by a real account. See §12.5.
-
-**Nothing is unpaid.** The media transport landed in §8 and server-side FSRS in
-§11 — the two items that carried a parenthesis in this line for six phases.
+so the marketplace cannot be published to by a real account. See §12.5. The
+media transport landed in §8 and server-side FSRS in §11 — the two items that
+carried a parenthesis in this line for six phases.
 
 Inside a phase, ✅ is landed and tested, ◻︎ is not started, ⚠️ is partly there and
 says what is missing.
@@ -863,13 +863,74 @@ you are losing, and a due date set on one device is there on the next. ✅
 
 ---
 
+## Phase 14 — asked for, not yet built
+
+Raised by the product on 2026-09-21, in the order they were asked for. Nothing
+here is started; what each entry records is *what already exists underneath it*,
+because in four of the five cases that is most of the work.
+
+**a. The activity heatmap on the deck list, simplified.** It landed at seventeen
+weeks, below the Study button. Wanted: **one week**, and **above** the deck
+list. `Heatmap` already takes any slice and any title, so this is a `slice(-7)`,
+a move, and a decision about whether seven cells still want to be a calendar
+grid or become something flatter.
+
+**b. A mastery percentage per deck.** `stats.deckFigures()` already returns the
+parts — new / learning / young / mature, retention against target, burden. The
+work is not the query, it is **choosing a number that is not a lie**. Mature
+share is honest and boring; `Σ R ÷ cards` is more meaningful and is a *model
+output*, so it inherits the calibration caveat the Progress tab now draws. Pick
+one, say which it is on the screen, and never average the two.
+
+**c. A running focus timer, bottom-left, animated.** `FocusProvider` is already
+mounted once in `AppShell` and already owns the state — the timer survives
+navigation today and simply has nowhere to be seen outside `/pomodoro`. So this
+is a presentational component reading a context that exists. It must not appear
+during `/study`: that screen is deliberately outside the shell because a
+reviewer with something moving in the corner is a feature working against
+retrieval.
+
+**d. Friends, presence, and a leaderboard.** Two separable things, and they are
+not the same call.
+
+*Friends and who is online* is new server work but familiar shape: Reverb is
+already running and already carries per-deck presence for collaboration
+(§9), so the transport and the presence channel pattern both exist.
+
+*A leaderboard* ⚠️ **reverses a decision this project made on evidence.** The
+metrics design states it outright: no XP, no badges, no levels, and no
+leaderboards or percentiles, because peer comparison in learning analytics helps
+high achievers and demotivates the struggling — who are exactly the people who
+open a dashboard looking for help. Every comparison in the app today is against
+*your own past* or a goal you set. Overturning that is a legitimate product
+call and it is the product's to make; it should be made knowingly, not as a
+side-effect of adding friends.
+
+**e. Working offline.** ⚠️ **Largely already built — the report is from the dev
+server.** `registerServiceWorker()` returns early unless `import.meta.env.PROD`
+(`lib/pwa.ts`), on purpose: in dev the module graph is hundreds of unhashed URLs
+that change on every save. So `:5173` has no service worker and never will;
+`public/sw.js` caches the shell and every hashed asset on the production build.
+The data was never the problem — the collection is SQLite in OPFS, read by a
+worker and never over HTTP, and the sync loop already queues and replays on
+reconnect.
+
+What is genuinely open: confirm a cold start with the network off actually
+reaches the deck list on a production build, and confirm an answer given offline
+survives a reload before the connection returns. Both are e2e tests, not
+features. Background Sync is deliberately still out — it would need the bearer
+token copied into the service worker and revoked in two places (PLAN.md §2.6),
+to buy what the in-page retry already does.
+
+---
+
 ## Later, deliberately
 
 | | Why it waits |
 |---|---|
 | Polygon drawing in the occlusion editor | Renders and imports already. Drawing needs click-to-place vertices and escape-to-finish; a rectangle is what people draw over a plate. |
 | Video capture | The media pipeline is mime-agnostic; only the capture UI is missing. |
-| `{{tts}}`, furigana / kana / kanji | Not this audience. Ship when someone asks. |
+| Furigana / kana / kanji | Not this audience. Ship when someone asks. (`{{tts}}` landed in §12.5.) |
 | Deck options presets | Anki shares one options group across decks. We keep one number per deck, not thirty. |
 | Per-note-type CSS and template editing | Behind "Advanced" forever. PLAN.md §3: fixed kinds for normal users is the product. |
 
