@@ -287,3 +287,46 @@ test('answering a card buries its siblings, and rule 4 sees it immediately', asy
   assert.deepEqual(await stats.burySiblings('n1:0', 'n1', NOW), [], 'already buried')
   assert.deepEqual(await stats.burySiblings('n2:0', 'n2', NOW), [], 'a note with one card')
 })
+
+test('a deck brief counts its subdecks, and a sibling deck is not one', async () => {
+  // The rollup is the whole risk here: `Anatomy` on the deck list means
+  // `Anatomy` and everything under it, and a briefing that quietly meant only
+  // the parent's own cards would describe a deck nobody is looking at.
+  const before = await stats.deckFigures('d1')
+  assert.ok(before)
+
+  sqlite.exec(`
+    INSERT INTO decks (id, parent_id, name, retention_target, new_per_day)
+      VALUES ('d1a', 'd1', 'Valves', 0.9, 20),
+             ('d9', NULL, 'Unrelated', 0.9, 20);
+    INSERT INTO notes (id, note_type, deck_id, fields, tags, guid, updated_at)
+      VALUES ('n3', 'nt', 'd1a', '{"Front":"Aortic","Back":"semilunar"}', '', 'g3', 0),
+             ('n9', 'nt', 'd9', '{"Front":"Nothing","Back":"here"}', '', 'g9', 0);
+    INSERT INTO cards (id, note_id, ord, due, state, stability)
+      VALUES ('n3:0', 'n3', 0, ${NOW + DAY}, 'review', 30),
+             ('n9:0', 'n9', 0, ${NOW + DAY}, 'review', 30);
+    INSERT INTO reviews (id, card_id, ts, rating, duration_ms) VALUES
+      ('rd1', 'n3:0', ${ago(9)}, 3, 4000),
+      ('rd2', 'n3:0', ${ago(5)}, 3, 8000),
+      ('rd3', 'n9:0', ${ago(9)}, 1, 4000),
+      ('rd4', 'n9:0', ${ago(5)}, 1, 4000);
+  `)
+
+  const child = await stats.deckFigures('d1a')
+  assert.ok(child)
+  assert.equal(child.deck, 'Valves')
+  assert.equal(child.cards, 1)
+  // The first answer has no predecessor, so only the second is a recall test.
+  assert.equal(child.tested, 1)
+  assert.equal(child.passed, 1)
+  assert.equal(child.median_answer_ms, 8000)
+
+  const parent = await stats.deckFigures('d1')
+  assert.ok(parent)
+  assert.equal(parent.cards, before.cards + 1, 'the subdeck is counted in')
+  assert.equal(parent.tested, before.tested + 1)
+  // `Unrelated` is a root deck beside `d1`, not under it.
+  assert.equal(parent.cards < before.cards + 2, true, 'a sibling deck is not a subdeck')
+
+  assert.equal(await stats.deckFigures('nope'), null)
+})

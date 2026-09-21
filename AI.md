@@ -527,6 +527,39 @@ pass also added the thing the codebase's own post-mortems keep pointing at: the
 test must assert the arithmetic with hand-computed numbers, because Phase 8
 shipped three contract bugs whose tests passed (6.5).
 
+**Pass 3 → 4, written after building it.** Three changes the code forced.
+
+**§3.4's reservation was half-built.** `ai_jobs.reserved_micros` was written at
+dispatch and read by nothing: `canSpend` summed `ai_usage` alone, so a queued
+document holding almost the whole allowance was invisible to an interactive
+call, and two uploads could both pass the same check. `Ledger::reserved()` now
+counts it. Two departures from what §3.4 describes, both because the doc's
+version leaks: the reservation is **derived from the job's status** rather than
+released on completion — a reservation handed back by a hook is one that leaks
+the first time a worker dies, and the leak looks exactly like ordinary spending
+— and it is **reduced by what the job has already charged**, or a running job
+would be counted twice for the length of the work it reserved. A job is exempt
+from its own reservation (`$exceptJob`), without which a document whose
+estimate used the last of an allowance would reserve itself into a deadlock.
+
+**§6.7's "two tabs" was only solved for uploads.** Every other call checked and
+charged in two separate steps, so two simultaneous requests were both told the
+same dollar was theirs. `Claude::call` now takes a per-account lock for the
+length of a call and refuses rather than queues, which is the rule
+`AiJobController` already applied to documents.
+
+**The meter showed dollars and stored tokens.** `ai_usage` had the four token
+columns from the start and `GET /ai/usage` never returned them. It does now, in
+total and per feature — a price change reprices the whole history, and "how much
+did I send" is the question that still has the same answer afterwards.
+
+**§2.2 gained its other half.** The grader named a flaw and stopped, which is
+right for a sweep over twenty thousand cards and wrong at the moment one is
+being written. `AiFeature::Rewrite` proposes a fix, per field, applied only by
+the person — the rule generated cards already follow, applied to an edit. It is
+a separate feature rather than a mode of `Grade` because it has its own model,
+its own risk and its own line in the meter.
+
 ---
 
 ## Sources

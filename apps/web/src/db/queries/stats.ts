@@ -835,3 +835,106 @@ export async function appTime(days = 7): Promise<{ appMs: number; reviewMs: numb
 }
 
 const startOfDay = (ts: number) => new Date(new Date(ts).setHours(0, 0, 0, 0)).getTime()
+
+// ── one deck, as figures a briefing can be written over ───────────────────
+
+export interface DeckFigures {
+  deck: string
+  target: number
+  cards: number
+  new: number
+  learning: number
+  young: number
+  mature: number
+  suspended: number
+  due: number
+  overdue: number
+  tested: number
+  passed: number
+  mature_tested: number
+  mature_passed: number
+  burden: number
+  median_answer_ms: number
+}
+
+/**
+ * Everything about one deck that is worth saying a sentence about.
+ *
+ * Gathered in one place rather than by filtering the dashboard's queries,
+ * because the dashboard's queries answer "across the collection" and every one
+ * of them would need the same subdeck recursion bolted on to answer "in here".
+ * One function, two statements, and the recursion written once.
+ *
+ * Subdecks are included — `Anatomy` means `Anatomy` and everything under it,
+ * which is what the deck list's own counts mean (repo.ts) and what a person
+ * looking at a parent deck is asking about.
+ */
+export async function deckFigures(deckId: string, sinceDays = 365, now = Date.now()): Promise<DeckFigures | null> {
+  const SUB = `WITH RECURSIVE sub(id) AS (
+      SELECT ?1 UNION ALL SELECT d.id FROM decks d JOIN sub ON d.parent_id = sub.id
+    )`
+
+  const [counts] = await db.select<Omit<DeckFigures, 'tested' | 'passed' | 'mature_tested' | 'mature_passed' | 'median_answer_ms'>>(
+    `${SUB}
+     SELECT (SELECT name FROM decks WHERE id = ?1) AS deck,
+            (SELECT retention_target FROM decks WHERE id = ?1) AS target,
+            COUNT(*) AS cards,
+            SUM(c.suspended = 0 AND c.state = 'new') AS "new",
+            SUM(c.suspended = 0 AND c.state IN ('learning','relearning')) AS learning,
+            SUM(c.suspended = 0 AND c.state = 'review' AND c.stability < 21) AS young,
+            SUM(c.suspended = 0 AND c.state = 'review' AND c.stability >= 21) AS mature,
+            SUM(c.suspended = 1) AS suspended,
+            SUM(c.suspended = 0 AND c.due <= ?2) AS due,
+            SUM(c.suspended = 0 AND c.state != 'new' AND c.due <= ?2) AS overdue,
+            -- SuperMemo's burden: the reviews per day this deck has already
+            -- committed you to at a steady state, whatever you do next.
+            SUM(CASE WHEN c.suspended = 0 AND c.state = 'review' AND c.stability >= 1
+                     THEN 1.0 / c.stability ELSE 0 END) AS burden
+       FROM cards c
+       JOIN notes n ON n.id = c.note_id
+      WHERE ${DECK_OF} IN (SELECT id FROM sub)`,
+    [deckId, now],
+  )
+
+  if (!counts?.deck) return null
+
+  const [recall] = await db.select<{
+    tested: number; passed: number; mature_tested: number; mature_passed: number
+  }>(
+    `${SUB}, tested AS (${RECALL_TESTS})
+     SELECT COUNT(*) AS tested,
+            SUM(CASE WHEN t.rating > 1 THEN 1 ELSE 0 END) AS passed,
+            SUM(CASE WHEN t.gap >= ?3 THEN 1 ELSE 0 END) AS mature_tested,
+            SUM(CASE WHEN t.gap >= ?3 AND t.rating > 1 THEN 1 ELSE 0 END) AS mature_passed
+       FROM tested t
+       JOIN cards c ON c.id = t.card_id
+       JOIN notes n ON n.id = c.note_id
+      WHERE ${DECK_OF} IN (SELECT id FROM sub) AND t.gap >= ?4 AND t.ts >= ?2`,
+    // Numbered from one per statement, not shared across the three: node's
+    // SQLite refuses a parameter a statement does not use, and the wasm build
+    // accepting it anyway is not a promise worth leaning on.
+    [deckId, now - sinceDays * DAY, MATURE, DAY],
+  )
+
+  // The median, not the mean: one card left open over lunch would drag an
+  // average into a number nobody recognises.
+  const times = await db.select<{ ms: number }>(
+    `${SUB}
+     SELECT r.duration_ms AS ms FROM reviews r
+       JOIN cards c ON c.id = r.card_id
+       JOIN notes n ON n.id = c.note_id
+      WHERE ${DECK_OF} IN (SELECT id FROM sub) AND r.ts >= ?2 AND r.duration_ms > 0
+      ORDER BY r.duration_ms`,
+    [deckId, now - 30 * DAY],
+  )
+
+  return {
+    ...counts,
+    burden: Number((counts.burden ?? 0).toFixed(2)),
+    tested: recall?.tested ?? 0,
+    passed: recall?.passed ?? 0,
+    mature_tested: recall?.mature_tested ?? 0,
+    mature_passed: recall?.mature_passed ?? 0,
+    median_answer_ms: times.length ? times[times.length >> 1]!.ms : 0,
+  }
+}
