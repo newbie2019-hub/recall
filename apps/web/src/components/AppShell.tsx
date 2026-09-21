@@ -10,6 +10,7 @@ import { AccountMenu } from '@/components/AccountMenu'
 import { FocusProvider } from '@/components/FocusTimer'
 import { DeckDialog, type DeckDialogMode } from '@/components/DeckDialog'
 import { useApkg } from '@/components/Apkg'
+import { useCsv } from '@/components/Csv'
 import { useActivity } from '@/hooks/useActivity'
 import { refreshDecks, useDecks } from '@/hooks/useDecks'
 import { cn } from '@/lib/utils'
@@ -38,6 +39,7 @@ export function AppShell() {
   const { decks } = useDecks()
   const [deckDialog, setDeckDialog] = useState<DeckDialogMode | null>(null)
   const apkg = useApkg({ onImported: refreshDecks })
+  const csv = useCsv({ onImported: refreshDecks })
 
   // Mounted once, here, because the shell is the one component every in-app
   // screen is inside. Time spent reviewing is measured per card; this is all
@@ -114,6 +116,12 @@ export function AppShell() {
                 <DropdownMenuItem onClick={apkg.save}>
                   <Download /> Export .apkg
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={csv.pick}>
+                  <Upload /> Import a spreadsheet
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={csv.save}>
+                  <Download /> Export .csv
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate(paths.noteTypes)}>
                   <LayoutGrid /> Note types
@@ -137,6 +145,7 @@ export function AppShell() {
       </main>
 
       {apkg.ui}
+      {csv.ui}
       <DeckDialog
         mode={deckDialog}
         decks={decks ?? []}
