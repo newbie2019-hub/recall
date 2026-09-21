@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { ChevronLeft, MoreHorizontal, Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import * as repo from '@/db/repo'
+import { sessionsAvailable } from '@/lib/collab/session'
+import { paths } from '@/routes/paths'
 
 /**
  * Desired retention, as a short list rather than the slider UI.md drew.
@@ -43,6 +46,11 @@ export function Browse({
   onNewSubdeck: () => void
   onShare?: () => void
 }) {
+  // Navigating rather than another `on…` prop: Together mode is the same
+  // `/study` this screen already sends people to, with one search parameter on
+  // it, and threading a second callback through for a URL that differs by nine
+  // characters is ceremony.
+  const navigate = useNavigate()
   const [notes, setNotes] = useState<repo.NoteRow[] | null>(null)
   const [query, setQuery] = useState('')
   const [options, setOptions] = useState({
@@ -106,6 +114,24 @@ export function Browse({
                 <DropdownMenuItem onClick={onNewSubdeck}>New subdeck</DropdownMenuItem>
                 <DropdownMenuItem onClick={onEditDeck}>Rename or move</DropdownMenuItem>
                 {onShare && <DropdownMenuItem onClick={onShare}>Share…</DropdownMenuItem>}
+                {/* Hidden rather than disabled when there is no websocket to
+                    join: an entry that opens a room nobody can enter is worse
+                    than no entry at all, and a dev build without Reverb is the
+                    common case, not the edge one.
+
+                    ponytail: shown on every deck, including private ones, where
+                    the room will contain exactly you. Knowing better means a
+                    roster request per deck screen to answer "is this shared",
+                    which `useCollabSession` already regrets making; the upgrade
+                    is the `shared` flag on the local `decks` row that comment
+                    proposes, and this entry should read it when it exists. */}
+                {sessionsAvailable() && (
+                  <DropdownMenuItem
+                    onClick={() => navigate(`${paths.study(deck.id)}?session=1`)}
+                  >
+                    Study together
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={onDeleteDeck}>
                   Delete deck

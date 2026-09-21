@@ -115,7 +115,10 @@ export class CollabSession {
     if (this.flushTimer) clearTimeout(this.flushTimer)
     if (this.retryTimer) clearTimeout(this.retryTimer)
     if (this.subscribed) {
-      this.echo?.leave(`deck.${this.options.deckId}`)
+      // `releaseChannel`, not `echo.leave`: a study session (Together mode) may
+      // be holding this same channel object in this tab, and leaving would
+      // unsubscribe it mid-session. The last holder does the leaving.
+      this.echoApi?.releaseChannel(`deck.${this.options.deckId}`)
       this.subscribed = false
     }
     if (this.echo) {
@@ -261,6 +264,7 @@ export class CollabSession {
     this.echo = this.echoApi?.acquireEcho() ?? null
     if (!this.echo || this.stopped) return
     this.subscribed = true
+    this.echoApi?.retainChannel(`deck.${this.options.deckId}`)
 
     this.echo
       .join(`deck.${this.options.deckId}`)

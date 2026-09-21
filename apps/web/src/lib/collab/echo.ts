@@ -77,6 +77,40 @@ export function releaseEcho(): void {
 }
 
 /**
+ * How many live objects are holding each named channel.
+ *
+ * The socket was already refcounted and the *channel* was not, which is a
+ * difference nobody noticed until two features wanted the same one. Echo caches
+ * a presence channel by name and hands the same object to every caller, so
+ * `echo.leave('deck.x')` is not "I am done with it" — it is "nobody is on this
+ * channel any more", declared unilaterally. A co-editing session closing a deck
+ * would silently unsubscribe a study session running on that deck in the same
+ * tab, and the symptom would be a room that stops updating for no visible
+ * reason.
+ *
+ * So: hold it while you use it, and let go. The last one out leaves. Callers
+ * still unbind their own listeners, because a channel that survives must not
+ * keep calling back into something that has stopped.
+ */
+const channelRefs = new Map<string, number>()
+
+export function retainChannel(name: string): void {
+  channelRefs.set(name, (channelRefs.get(name) ?? 0) + 1)
+}
+
+/** @returns whether this was the last holder, and the channel was left. */
+export function releaseChannel(name: string): boolean {
+  const left = (channelRefs.get(name) ?? 1) - 1
+  if (left > 0) {
+    channelRefs.set(name, left)
+    return false
+  }
+  channelRefs.delete(name)
+  echo?.leave(name)
+  return true
+}
+
+/**
  * Reverb's id for this connection, which the server needs to avoid echoing an
  * update back to the person who typed it.
  *

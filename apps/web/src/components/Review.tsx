@@ -26,8 +26,22 @@ import { CardInfoDialog } from '@/components/CardInfoDialog'
 import { answerCard } from '@/db/queries/filtered'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { previewIntervals, type RatingValue } from '@recall/core'
+import { useStudySession } from '@/hooks/useStudySession'
+import { SessionStrip } from '@/components/collab/SessionStrip'
 
-export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () => void }) {
+export function Review({
+  deckId,
+  onExit,
+  session = false,
+}: {
+  deckId?: string | null
+  onExit: () => void
+  /** Together mode, from `?session=1`. Idle otherwise, which is almost always. */
+  session?: boolean
+}) {
+  // Shares attention and nothing else: the queue below, the scheduling and the
+  // review log are untouched by this and must stay that way (COLLAB-SESSIONS §1).
+  const room = useStudySession(deckId, session)
   const [sc, setSc] = useState<repo.StudyCard | null>(null)
   const [infoFor, setInfoFor] = useState<string | null>(null)
   const [painted, setPainted] = useState<PaintedCard | null>(null)
@@ -104,13 +118,24 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
       answered.current = true
       try {
         await answerCard(sc, rating, clock.current?.elapsed() ?? 0)
+        // After the write, never before: a number that went up in somebody
+        // else's strip has to mean a review that actually landed here.
+        room.session?.answered()
         await load()
       } finally {
         busy.current = false
       }
     },
-    [sc, revealed, load],
+    [sc, revealed, load, room.session],
   )
+
+  // The other thing the room needs to hear about. Somebody who has finished the
+  // deck looks exactly like somebody who wandered off, and only they can tell
+  // the difference — so they say so, and the strip writes "caught up" rather
+  // than aiming "idle" at the one person who is ahead.
+  useEffect(() => {
+    if (!loading && !sc) room.session?.caughtUp()
+  }, [loading, sc, room.session])
 
   const undo = useCallback(async () => {
     if (await repo.undoLast()) {
@@ -255,6 +280,10 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
+
+      {/* Above the card and below the progress bar — never in the footer, where
+          it would sit under the hand reaching for a rating. */}
+      <SessionStrip members={room.members} total={room.total} status={room.status} />
 
       <CardInfoDialog cardId={infoFor} onClose={() => setInfoFor(null)} />
 
