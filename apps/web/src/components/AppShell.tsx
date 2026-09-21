@@ -175,6 +175,7 @@ const NAV = [
   { to: paths.browse, label: 'Browse', end: false },
   { to: paths.stats, label: 'Stats', end: false },
   { to: paths.marketplace, label: 'Explore', end: false },
+  { to: paths.friends, label: 'Friends', end: false },
 ] as const
 
 /** Underline rather than a filled pill: one hue, and the bar stays quiet. */

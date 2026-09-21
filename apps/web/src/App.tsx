@@ -29,6 +29,7 @@ import { SharePage } from '@/routes/SharePage'
 import { WelcomePage } from '@/routes/WelcomePage'
 import { DoctorPage } from '@/routes/DoctorPage'
 import { GeneratePage } from '@/routes/GeneratePage'
+import { FriendsPage } from '@/routes/FriendsPage'
 
 /**
  * The route table.
@@ -115,6 +116,11 @@ export default function App() {
             {/* Phase 9 — live collaboration. The document itself has no route:
                 it is the deck screen, which becomes live when shared. */}
             <Route path="/decks/:deckId/share" element={<SharePage />} />
+
+            {/* Phase 14d — friends and the weekly board. Guarded: a friendship
+                only exists on the server, so there is nothing here to show
+                somebody without an account. */}
+            <Route path="/friends" element={<FriendsPage />} />
           </Route>
         </Route>
 

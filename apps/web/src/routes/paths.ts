@@ -53,6 +53,10 @@ export const paths = {
   generate: '/generate',
   doctorFor: (deckId: string) => `/doctor?deck=${deckId}`,
 
+  // Phase 14d — people, and the one week-long board. No per-friend URL: a
+  // friendship is a row, not a place, and there is nothing on a page about one.
+  friends: '/friends',
+
   // Phase 9 — one shared deck's people. Not the document: that has no URL,
   // because it is the deck you are already on.
   share: (deckId: string) => `/decks/${deckId}/share`,
