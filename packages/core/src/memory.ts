@@ -32,6 +32,17 @@ const PARAMS = generatorParameters({ enable_fuzz: false }).w
 
 const MS_PER_DAY = 86_400_000
 
+/**
+ * The curve's two shape constants, exported for the one caller that cannot use
+ * a function: `search.ts` compiles `prop:r` into SQL, where it has to be
+ * arithmetic rather than a call.
+ *
+ * Derived, never written down — see the warning above. Under FSRS-6 `decay` is
+ * a trained weight, so hard-coding either of these is how a search silently
+ * starts disagreeing with the scheduler.
+ */
+export const { decay: FSRS_DECAY, factor: FSRS_FACTOR } = computeDecayFactor(PARAMS)
+
 /** Probability of recall after `elapsedDays` for a card of this stability. */
 export function retrievability(stability: number, elapsedDays: number): number {
   if (!(stability > 0)) return 0

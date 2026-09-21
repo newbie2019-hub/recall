@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react'
 import { CARD_STATES, formatSearch, setFacet, type Term, type TermKind } from '@recall/core'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SearchHelp } from './SearchHelp'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -55,8 +56,14 @@ export function FilterBar({
           onBlur={() => { setTyping(false); onSearch(draft) }}
           placeholder="deck:Anatomy tag:thorax is:due -flag:1"
           aria-label="Search every card"
-          className="h-8 pr-8 pl-8 font-mono text-xs"
+          className="h-8 pr-14 pl-8 font-mono text-xs"
         />
+        <SearchHelp onInsert={(term) => {
+          const next = `${draft.trim()} ${term}`.trim()
+          setDraft(next)
+          setTyping(false)
+          onSearch(next)
+        }} />
         {shown && (
           <Button
             type="button" variant="ghost" size="icon-xs" aria-label="Clear search"

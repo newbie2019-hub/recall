@@ -52,6 +52,34 @@ let modulePromise: Promise<any> | null = null
 const sqliteModule = () =>
   (modulePromise ??= sqlite3InitModule({ print: () => {}, printErr: console.error }))
 
+/**
+ * `REGEXP`, which SQLite leaves to the host.
+ *
+ * It has to be a SQL function rather than a filter applied to the results,
+ * because of rule 4: the header count, the page and the rows a bulk operation
+ * touches are three separate queries over the same WHERE clause, and a filter
+ * that only one of them applies would make the count a lie.
+ *
+ * Case-insensitive, matching how every other text search here behaves. A
+ * pattern that does not compile matches nothing — `parseSearch` has already
+ * rejected those, so this is only the last line.
+ */
+function registerRegexp(db: { createFunction: (...args: unknown[]) => unknown }): void {
+  const cache = new Map<string, RegExp | null>()
+  db.createFunction('regexp', (_ctx: unknown, pattern: unknown, value: unknown) => {
+    if (typeof pattern !== 'string' || value == null) return 0
+    if (!cache.has(pattern)) {
+      try {
+        cache.set(pattern, new RegExp(pattern, 'i'))
+      } catch {
+        cache.set(pattern, null)
+      }
+    }
+    const re = cache.get(pattern)
+    return re && re.test(String(value)) ? 1 : 0
+  })
+}
+
 async function open() {
   const sqlite3 = await sqliteModule()
   // opfs-sahpool: fastest OPFS backend, and unlike the plain "opfs" VFS it needs
@@ -59,6 +87,7 @@ async function open() {
   const pool = await sqlite3.installOpfsSAHPoolVfs({ name: 'recall' })
   const db = new pool.OpfsSAHPoolDb('/recall.sqlite3')
   db.exec('PRAGMA foreign_keys = ON')
+  registerRegexp(db)
   const current = Number(db.selectValue('PRAGMA user_version') ?? 0)
   for (let i = current; i < MIGRATIONS.length; i++) {
     db.transaction(() => {

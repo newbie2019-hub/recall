@@ -29,6 +29,14 @@ const q = (s: string) => parseSearch(s)
 
 before(() => {
   for (const m of MIGRATIONS) sqlite.exec(m)
+  // SQLite leaves REGEXP to the host. `db/worker.ts` registers the real one on
+  // the wasm connection; this is the same function, so `re:` is exercised here
+  // rather than asserted about. `X REGEXP Y` calls `regexp(Y, X)` — the pattern
+  // arrives first, which is the easiest thing in this file to get backwards.
+  sqlite.function('regexp', (pattern: unknown, value: unknown) => {
+    if (typeof pattern !== 'string' || value == null) return 0
+    return new RegExp(pattern, 'i').test(String(value)) ? 1 : 0
+  })
   db.select = async <T,>(sql: string, params: unknown[] = []) =>
     sqlite.prepare(sql).all(...bind(params)) as T[]
   db.run = async (sql: string, params: unknown[] = []) => {
@@ -42,7 +50,7 @@ before(() => {
 
 /** A small collection: two decks, one nested, three notes, six cards. */
 beforeEach(() => {
-  sqlite.exec('DELETE FROM cards; DELETE FROM notes; DELETE FROM decks; DELETE FROM note_types')
+  sqlite.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM notes; DELETE FROM decks; DELETE FROM note_types')
   sqlite.exec(`
     INSERT INTO decks (id, parent_id, name) VALUES
       ('d1', NULL, 'Anatomy'), ('d2', 'd1', 'Thorax'), ('d3', NULL, 'Pharm');
@@ -259,4 +267,63 @@ test('retag reaches every card of a selected note, and is idempotent', async () 
 
   await add.run()
   assert.equal(await browse.browseCount(q('tag:exam')), 0)
+})
+
+// ── the prefixes that read columns migration 10 added ─────────────────────
+
+test('added: finds cards by when they were made, not when they were edited', async () => {
+  sqlite.exec(`
+    UPDATE cards SET created_at = ${NOW - 100 * DAY};
+    UPDATE cards SET created_at = ${NOW - 2 * DAY} WHERE id = 'n1:0';
+    UPDATE notes SET updated_at = ${NOW} WHERE id = 'n2';
+  `)
+  // n2 was edited moments ago and still must not count as recently added.
+  assert.equal(await browse.browseCount(q('added:7')), 1)
+  assert.equal(await browse.browseCount(q('added:365')), 6)
+})
+
+test('rated: reads the log, including a card that has since been forgotten', async () => {
+  sqlite.exec(`
+    INSERT INTO reviews (id, card_id, ts, rating, duration_ms) VALUES
+      ('rv1', 'n1:0', ${NOW - 3 * DAY}, 1, 1000),
+      ('rv2', 'n2:0', ${NOW - 3 * DAY}, 3, 1000),
+      ('rv3', 'n3:0', ${NOW - 90 * DAY}, 3, 1000);
+  `)
+  assert.equal(await browse.browseCount(q('rated:7')), 2)
+  assert.equal(await browse.browseCount(q('rated:7:1')), 1, 'only the failure')
+  assert.equal(await browse.browseCount(q('rated:365')), 3)
+
+  // Forgetting resets the card; it does not un-answer it.
+  await browse.bulkForget({ ids: ['n1:0'] }, NOW)
+  assert.equal(await browse.browseCount(q('rated:7:1')), 1)
+})
+
+test('prop: runs as SQL against a real database', async () => {
+  sqlite.exec(`
+    UPDATE cards SET stability = 30, difficulty = 4, last_review = ${NOW - 10 * DAY}
+     WHERE id = 'n1:0';
+    UPDATE cards SET stability = 2, difficulty = 9, last_review = ${NOW - 10 * DAY}
+     WHERE id = 'n2:0';
+  `)
+  assert.equal(await browse.browseCount(q('prop:s>=10')), 1)
+  assert.equal(await browse.browseCount(q('prop:d>8')), 1)
+  assert.equal(await browse.browseCount(q('prop:reps>10')), 2)
+
+  // Ten days into a 30-day stability is still well remembered; ten days into a
+  // 2-day stability is not. This is the pair that a flipped operator swaps.
+  const strong = await browse.browseCards(q('prop:r>=0.8'))
+  assert.deepEqual(strong.map((r) => r.id), ['n1:0'])
+  const weak = await browse.browseCards(q('prop:r<0.8'))
+  assert.deepEqual(weak.map((r) => r.id), ['n2:0'])
+})
+
+test('re: matches through the fields, and the count agrees with the page', async () => {
+  // Rule 4 is the reason `re:` compiles to SQL rather than filtering the rows:
+  // the count and the page are two queries and both must apply it.
+  assert.equal(await browse.browseCount(q('re:^.Aortic')), 0)
+  assert.equal(await browse.browseCount(q('re:aortic')), 2)
+
+  const rows = await browse.browseCards(q('re:asp.*in'))
+  assert.equal(rows.length, 2)
+  assert.equal(await browse.browseCount(q('re:asp.*in')), rows.length)
 })

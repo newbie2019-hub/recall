@@ -13,7 +13,9 @@
  * same broken promise as a deck badge that lies (README, rule 4).
  */
 
-export type TermKind = 'deck' | 'tag' | 'is' | 'flag' | 'lapses' | 'due' | 'text'
+export type TermKind =
+  | 'deck' | 'tag' | 'is' | 'flag' | 'lapses' | 'due' | 'text'
+  | 'prop' | 'added' | 'rated' | 'nid' | 're'
 
 export interface Term {
   kind: TermKind
@@ -37,9 +39,47 @@ const IS_VALUES = new Set<string>([
   ...CARD_STATES, 'due', 'suspended', 'buried', 'flagged', 'marked', 'leech',
 ])
 
+/**
+ * `prop:r` is a question about the forgetting curve, and `memory.ts` owns it.
+ *
+ * ⚠️ Its shape is not a constant of the universe: FSRS-6 trains `decay` as a
+ * weight. Importing rather than writing a number down is what keeps a search
+ * from silently disagreeing with the scheduler.
+ */
+import { daysUntil } from './memory.ts'
+
 const LAPSES = /^(>=|<=|>|<|=)?(\d{1,6})$/
 const DAYS = /^-?\d{1,5}$/
 const DAY_MS = 86_400_000
+
+/**
+ * `prop:` — a comparison against one numeric property of a card.
+ *
+ * Anki's spelling, because anybody who has one of its searches written down
+ * should be able to paste it. The properties are whitelisted here and mapped to
+ * SQL below; anything else falls through to plain text like any other prefix
+ * that does not validate, which is how someone typing `prop:eas>2` finds out.
+ *
+ * `r` is the odd one: retrievability is not a column, it is the forgetting
+ * curve evaluated now, so it compiles to arithmetic rather than a comparison.
+ */
+const PROPS = {
+  ivl: 'interval in days',
+  due: 'days until due',
+  reps: 'times answered',
+  lapses: 'times failed',
+  s: 'stability in days',
+  d: 'difficulty, 1-10',
+  r: 'predicted recall, 0-1',
+} as const
+
+const PROP = /^([a-z]+)(>=|<=|!=|>|<|=)(-?\d+(?:\.\d+)?)$/
+
+/** `rated:7` — answered in the last week. `rated:7:1` — *failed* in it. */
+const RATED = /^(\d{1,5})(?::([1-4]))?$/
+
+/** `added:30` — created in the last thirty days. */
+const ADDED = /^\d{1,5}$/
 
 /**
  * Quoted runs survive whitespace, so `tag:"needs work"` is one token. The
@@ -74,8 +114,34 @@ function term(prefix: string, value: string): TermKind | null {
     case 'flag': return /^[0-7]$/.test(value) ? 'flag' : null
     case 'lapses': return LAPSES.test(value) ? 'lapses' : null
     case 'due': return DAYS.test(value) ? 'due' : null
+    case 'prop': {
+      const m = PROP.exec(value.toLowerCase())
+      return m && m[1]! in PROPS ? 'prop' : null
+    }
+    case 'added': return ADDED.test(value) ? 'added' : null
+    case 'rated': return RATED.test(value) ? 'rated' : null
+    case 'nid': return value.length <= 64 ? 'nid' : null
+    case 're': return isRegex(value) ? 're' : null
     case '': return 'text'
     default: return null
+  }
+}
+
+/**
+ * A regex that this engine will actually run, checked at parse time.
+ *
+ * Compiling it here means a typo is a search that finds nothing and says so,
+ * rather than an exception from inside SQLite three frames down. It is also the
+ * only validation that matters for safety: the pattern never reaches SQL — the
+ * `re:` term filters in JS after the query, because SQLite has no REGEXP
+ * without an extension.
+ */
+function isRegex(pattern: string): boolean {
+  try {
+    new RegExp(pattern, 'i')
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -171,6 +237,36 @@ function compile(t: Term, now: number, p: unknown[]): string {
       p.push(now + Number(t.value) * DAY_MS)
       return `(c.state != 'new' AND c.due <= ?)`
 
+    case 'prop':
+      return propSql(t.value.toLowerCase(), now, p)
+
+    case 'added':
+      // Cards, not notes: the browser lists cards, and a note whose second
+      // template started generating last week added a card last week.
+      p.push(now - Number(t.value) * DAY_MS)
+      return 'c.created_at >= ?'
+
+    case 'rated': {
+      const [, days, rating] = RATED.exec(t.value)!
+      p.push(now - Number(days) * DAY_MS)
+      if (rating) p.push(Number(rating))
+      // Answers, not schedule: this is the one term that asks the log directly,
+      // which is why it can still find a card that has since been forgotten.
+      return `EXISTS (SELECT 1 FROM reviews rv WHERE rv.card_id = c.id AND rv.ts >= ?${
+        rating ? ' AND rv.rating = ?' : ''})`
+    }
+
+    case 'nid':
+      p.push(t.value)
+      return 'c.note_id = ?'
+
+    case 're':
+      // Against the raw fields JSON, the same text `text:` sees. `REGEXP` is
+      // registered on the connection in `db/worker.ts`; see there for why it
+      // cannot be a filter over the results.
+      p.push(t.value)
+      return 'n.fields REGEXP ?'
+
     case 'text':
       // ponytail: matches the raw fields JSON, so it also matches HTML tag
       // names and hits nothing for text split by inline markup. A stripped
@@ -178,6 +274,87 @@ function compile(t: Term, now: number, p: unknown[]): string {
       p.push(`%${esc(t.value)}%`)
       return `n.fields LIKE ? ESCAPE '\\'`
   }
+}
+
+/**
+ * One numeric property of a card, compared.
+ *
+ * Three of the seven are not columns and are spelled out as arithmetic:
+ * `ivl` and `due` are days rather than the milliseconds stored, and `r` is the
+ * forgetting curve — `(1 + FACTOR·t/S)^DECAY` — evaluated at today's elapsed
+ * days. The curve's constants are passed in rather than hard-coded so that the
+ * one place they are derived stays `memory.ts`.
+ */
+function propSql(value: string, now: number, p: unknown[]): string {
+  // Non-null throughout: `term()` ran this same pattern before the term was
+  // accepted, so a `prop` term that reaches here matched all three groups.
+  const m = PROP.exec(value)!
+  const [key, op, n] = [m[1]!, m[2]!, m[3]!]
+  const num = Number(n)
+
+  switch (key as keyof typeof PROPS) {
+    case 'reps': p.push(num); return `c.reps ${op} ?`
+    case 'lapses': p.push(num); return `c.lapses ${op} ?`
+    case 's': p.push(num); return `c.stability ${op} ?`
+    case 'd': p.push(num); return `c.difficulty ${op} ?`
+
+    case 'ivl':
+      // The gap FSRS chose, which only exists once a card has been answered.
+      p.push(num)
+      return `(c.last_review IS NOT NULL AND (c.due - c.last_review) / 86400000.0 ${op} ?)`
+
+    case 'due':
+      p.push(now, num)
+      return `(c.state != 'new' AND (c.due - ?) / 86400000.0 ${op} ?)`
+
+    case 'r':
+      return recallSql(op, num, now, p)
+  }
+}
+
+/**
+ * `prop:r` without evaluating the curve in SQL.
+ *
+ * The obvious compilation needs `POWER`, and SQLite only has the maths
+ * functions when it was built with them — true of `node:sqlite`, not promised
+ * by the wasm build this actually runs on. So the threshold is inverted in
+ * JavaScript instead, which is exact rather than a workaround:
+ *
+ *     R(t,S) = (1 + F·t/S)^D  ≥ x   ⟺   t/S ≤ (x^(1/D) − 1)/F
+ *
+ * and the right-hand side is `daysUntil(1, x)` — the function `memory.ts`
+ * already exports for "how long until recall falls to x". The comparison left
+ * in SQL is then a multiplication.
+ *
+ * **The operator flips.** Recall *falls* as time passes, so a card with high
+ * recall is one with a *short* elapsed time. Getting this backwards would
+ * return precisely the cards you did not ask for, which is why it is a table
+ * rather than a clever expression.
+ */
+function recallSql(op: string, target: number, now: number, p: unknown[]): string {
+  // Recall is in (0, 1]. Anything outside that is asking about nothing, and
+  // saying so as a constant beats a comparison that cannot be satisfied.
+  if (target <= 0) return op === '>' || op === '>=' || op === '!=' ? '1' : '0'
+  if (target > 1) return op === '<' || op === '<=' || op === '!=' ? '1' : '0'
+
+  const elapsed = `((? - c.last_review) / 86400000.0)`
+  const seen = `c.last_review IS NOT NULL AND c.stability > 0`
+
+  // `=` on a float never matches, so it means "shows the same percentage",
+  // which is the only reading that can be true of anything on screen.
+  if (op === '=' || op === '!=') {
+    const lo = daysUntil(1, Math.min(1, target + 0.005))
+    const hi = daysUntil(1, Math.max(0.000001, target - 0.005))
+    p.push(now, now)
+    const band = `(${seen} AND ${elapsed} >= ${lo} * c.stability
+                   AND ${elapsed} <= ${hi} * c.stability)`
+    return op === '=' ? band : `NOT ${band}`
+  }
+
+  const k = daysUntil(1, target)
+  const flipped = { '>=': '<=', '>': '<', '<=': '>=', '<': '>' }[op]!
+  p.push(now)
+  return `(${seen} AND ${elapsed} ${flipped} ${k} * c.stability)`
 }
 
 /**
