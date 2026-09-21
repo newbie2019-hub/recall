@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronRight, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router'
@@ -9,8 +9,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DeckDialog, type DeckDialogMode } from '@/components/DeckDialog'
+import { Heatmap } from '@/components/stats/charts'
 import { SyncBanner } from '@/components/SyncBanner'
 import { InvitationsBanner } from '@/components/collab/InvitationsBanner'
+import { collectionReady } from '@/db/boot'
+import * as stats from '@/db/queries/stats'
 import { refreshDecks, useDecks } from '@/hooks/useDecks'
 import { useClonedDeckUpdates } from '@/hooks/useClonedDeckUpdates'
 import { cn } from '@/lib/utils'
@@ -32,6 +35,23 @@ export function DeckListPage() {
   const updates = useClonedDeckUpdates()
   const [deckDialog, setDeckDialog] = useState<DeckDialogMode | null>(null)
   const [collapsed, toggleDeck] = useCollapsedDecks()
+  const [history, setHistory] = useState<stats.DayCount[] | null>(null)
+
+  /**
+   * The streak, on the front door.
+   *
+   * It was on `/stats`, at the bottom, under everything. Of every add-on in the
+   * Anki ecosystem the review heatmap is the most installed by a wide margin,
+   * and it is not installed for the analysis — it is installed to be seen on
+   * the way in. The chart already existed; it was only ever a question of where
+   * it was drawn.
+   *
+   * A full year is fetched so the streak is right however long it is, and a
+   * quarter of it is shown, because the front door is not the dashboard.
+   */
+  useEffect(() => {
+    void collectionReady.then(() => stats.daily(365)).then(setHistory)
+  }, [])
 
   if (error) {
     return (
@@ -159,6 +179,18 @@ export function DeckListPage() {
         {totalDue ? 'Study now' : 'Nothing due'}
       </Button>
 
+      {/* Below the button that starts studying, never above it. A streak is a
+          reason to come back, not the reason you came. */}
+      {history && history.some((d) => d.reviews > 0) && (
+        <Link to={paths.stats} className="mt-10 block">
+          <Heatmap
+            title="Recent activity"
+            days={history.slice(-DOORSTEP_DAYS)}
+            streak={stats.streak(history)}
+          />
+        </Link>
+      )}
+
       <DeckDialog
         mode={deckDialog}
         decks={decks ?? []}
@@ -184,6 +216,9 @@ export function DeckListPage() {
  * already rolled up from the whole subtree, which is why the totals live on the
  * roots.
  */
+/** Seventeen weeks. Enough to see a habit, short enough not to be the page. */
+const DOORSTEP_DAYS = 119
+
 const KEY = 'recall.collapsed_decks'
 
 function useCollapsedDecks(): [Set<string>, (id: string) => void] {
