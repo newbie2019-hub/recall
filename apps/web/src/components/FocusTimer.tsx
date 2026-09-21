@@ -98,12 +98,20 @@ function FocusDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: 
 }
 
 /**
- * The running block, pinned to the bottom of every screen.
+ * The running block, pinned to the bottom-left of every screen.
  *
- * Deliberately quiet — a thin bar, a monospace clock and one control. It is
- * there to answer "how long have I got" at a glance without leaving the card
- * you are on, and a bar that draws attention is a bar that competes with the
- * thing it exists to protect.
+ * Left rather than centre: centred, it sat under the primary button on half the
+ * screens in the app — *Study now*, *Add note*, *Save* — and a floating pill
+ * over the thing you came to press is a timer competing with the work it exists
+ * to protect. The corner is out of the way and still in the eyeline.
+ *
+ * The clock is a **depleting ring**, which is the one piece of motion worth
+ * having here: it is legible at a glance with no reading, it says "running"
+ * without a second element, and it is a single `stroke-dashoffset` that the
+ * browser interpolates — no animation library, no timer loop driving a
+ * repaint. The pill slides up once on arrival and the ring breathes gently
+ * while a focus block runs; both stop dead under `prefers-reduced-motion`,
+ * because motion in the corner of the eye is exactly what that setting is for.
  *
  * It renders nothing when no block is running, so it costs nothing on the
  * screens of anyone who never uses it.
@@ -116,33 +124,30 @@ function FocusBar({ onOpen }: { onOpen: () => void }) {
   const isBreak = session?.kind === 'break'
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-border bg-background/95 py-1.5 pr-1.5 pl-4 shadow-lg backdrop-blur">
+    <div className="pointer-events-none fixed bottom-0 left-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div
+        className="pointer-events-auto flex items-center gap-2.5 rounded-full border border-border
+                   bg-background/95 py-1.5 pr-1.5 pl-2 shadow-lg backdrop-blur
+                   motion-safe:animate-[focus-in_320ms_cubic-bezier(0.22,1,0.36,1)]"
+      >
         <button
           onClick={onOpen}
           className="flex items-center gap-2.5 text-left"
           aria-label={session ? `${formatClock(remaining)} left — open the focus timer` : 'Focus block finished'}
         >
-          {isBreak ? (
-            <Coffee className="size-3.5 text-muted-foreground" />
-          ) : (
-            <Timer className="size-3.5 text-hematoxylin" />
-          )}
+          <FocusRing progress={session ? progress : 1} breathing={!!session && !isBreak}>
+            {isBreak ? (
+              <Coffee className="size-3 text-muted-foreground" />
+            ) : (
+              <Timer className="size-3 text-hematoxylin" />
+            )}
+          </FocusRing>
           <span className="font-mono text-sm tabular-nums">
             {session ? formatClock(remaining) : 'Done'}
           </span>
           <span className="hidden text-xs text-muted-foreground sm:inline">
             {session ? (isBreak ? 'break' : 'focus') : finished === 'focus' ? 'take five' : 'back to work'}
           </span>
-          {session && (
-            <span className="hidden h-1 w-16 overflow-hidden rounded-full bg-border sm:block" aria-hidden>
-              <span
-                className={cn('block h-full transition-[width] duration-1000 ease-linear',
-                  isBreak ? 'bg-muted-foreground' : 'bg-hematoxylin')}
-                style={{ width: `${progress * 100}%` }}
-              />
-            </span>
-          )}
         </button>
 
         <Button
@@ -156,5 +161,43 @@ function FocusBar({ onOpen }: { onOpen: () => void }) {
         </Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * The clock, as a ring that empties.
+ *
+ * One `stroke-dashoffset` the browser interpolates over a second, so the sweep
+ * is smooth while the hook only ticks once a second — animating the value
+ * rather than repainting at 60fps is the whole trick, and it costs nothing when
+ * the tab is hidden because the compositor stops with it.
+ *
+ * The breathing is deliberately slight (a 4% scale over four seconds) and only
+ * on a *focus* block: a break that pulses at you is the opposite of a break.
+ * Both it and the entrance are `motion-safe`, so the whole thing is static for
+ * anyone who has asked for that.
+ */
+function FocusRing({
+  progress, breathing, children,
+}: { progress: number; breathing: boolean; children: ReactNode }) {
+  const R = 13
+  const C = 2 * Math.PI * R
+
+  return (
+    <span className={cn('relative grid size-8 place-items-center',
+      breathing && 'motion-safe:animate-[focus-breathe_4s_ease-in-out_infinite]')}>
+      <svg viewBox="0 0 32 32" className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx="16" cy="16" r={R} fill="none" strokeWidth="2.5" className="stroke-border" />
+        <circle
+          cx="16" cy="16" r={R} fill="none" strokeWidth="2.5" strokeLinecap="round"
+          className={cn('transition-[stroke-dashoffset] duration-1000 ease-linear',
+            breathing ? 'stroke-hematoxylin' : 'stroke-muted-foreground')}
+          strokeDasharray={C}
+          // Full ring at the start of a block, empty at the end.
+          strokeDashoffset={C * Math.min(1, Math.max(0, progress))}
+        />
+      </svg>
+      {children}
+    </span>
   )
 }

@@ -769,5 +769,79 @@ ok(waitingAfter === waitingBefore,
    `the card count survived the round trip (${waitingBefore} → ${waitingAfter})`)
 rmSync(downloads, { recursive: true, force: true })
 
+// ── offline ────────────────────────────────────────────────────────────────
+/**
+ * The app on a plane.
+ *
+ * Every section above already runs with **no API server**, which is the data
+ * half of offline-first and the half people usually mean. This is the other
+ * half: no network *at all*, so the HTML, the JavaScript and the 856 kB sqlite
+ * wasm have to come from the service worker or nothing loads and none of the
+ * rest of it matters.
+ *
+ * It runs last on purpose. Cutting the wire is a global change to the browser,
+ * and a section after it would be testing something nobody asked about.
+ */
+section('offline')
+
+// The worker registers after `load` and only on a production build, so give it
+// a navigation to take control on before the wire is cut.
+await send('Page.navigate', { url: URL_UNDER_TEST })
+await until(`document.body.innerText.includes('Study now')`, 'deck list, warm')
+await until(`!!navigator.serviceWorker.controller`, 'service worker in control')
+
+// Clear the HTTP cache before the visit that is supposed to populate the
+// worker's. Without this the test passes for the wrong reason: Chrome's memory
+// cache satisfies `/assets/` across navigations in the same tab, the fetch
+// events never reach the worker, and the app loads "offline" from a disk cache
+// that is evictable and was never the plan. Everything after this line is
+// therefore the service worker or nothing.
+await send('Network.enable')
+await send('Network.clearBrowserCache')
+
+await send('Page.navigate', { url: URL_UNDER_TEST })
+await until(`document.body.innerText.includes('Study now')`, 'deck list, controlled')
+const cached = await ev(
+  `caches.open('recall-shell-v1').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname))`)
+ok(cached.length > 1, `the shell and its assets are cached (${cached.length} entries)`)
+ok(cached.some((p) => p.endsWith('.wasm')),
+   'including the sqlite wasm, without which nothing opens')
+
+const waiting = () => ev(`document.body.innerText.match(/(\\d+) cards waiting/)?.[1] ?? null`)
+const dueBefore = await waiting()
+
+await send('Network.emulateNetworkConditions', {
+  offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+})
+
+// A cold start with nothing on the other end of the wire.
+await send('Page.navigate', { url: URL_UNDER_TEST })
+await until(`document.body.innerText.includes('Study now')`, 'deck list with the network off')
+ok(true, 'the app starts with no network at all')
+ok(await waiting() === dueBefore, 'the collection is all there (' + dueBefore + ' waiting)')
+
+// An answer given offline has to reach OPFS, not a queue in memory: a tab that
+// is closed before the connection returns must not lose the review.
+await click('Study now')
+await until(`!!document.querySelector('header span')`, 'review screen, offline')
+const offlineBefore = await counter()
+await key(' ')
+await until(`document.body.innerText.includes('Again')`, 'reveal, offline')
+await key('3')
+await until(`document.querySelector('header span').textContent !== ${JSON.stringify(offlineBefore)}`, 'next card, offline')
+const offlineAfter = await counter()
+
+await send('Page.navigate', { url: URL_UNDER_TEST })
+await until(`document.body.innerText.includes('Study now')`, 'reload, still offline')
+await click('Study now')
+await until(`!!document.querySelector('header span')`, 'review after an offline reload')
+ok((await counter()) === offlineAfter,
+   `an answer given offline survived a reload (${offlineBefore} → ${offlineAfter})`)
+
+// Back on the wire, so nothing downstream inherits a dead network.
+await send('Network.emulateNetworkConditions', {
+  offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+})
+
 console.log(failures ? `\n${failures} failed` : '\nall passed')
 process.exit(failures ? 1 : 0)

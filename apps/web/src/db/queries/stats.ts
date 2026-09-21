@@ -1058,3 +1058,81 @@ export async function memoryModel(days = 90, sinceDays = 365, now = Date.now()):
     })),
   }
 }
+
+// ── mastery, per deck, rolled up ──────────────────────────────────────────
+
+export interface Mastery {
+  /** Σ R over the deck's cards — the model's estimate of what is still there. */
+  remembered: number
+  /** Everything it was summed over, so the share can be shown with its denominator. */
+  cards: number
+}
+
+/**
+ * How much of each deck the model thinks is still in there.
+ *
+ * `Σ R ÷ cards`, chosen over "share of cards that are mature" because the
+ * threshold version answers a question nobody asked — a card one day short of
+ * twenty-one is not half-learnt, and a deck of ninety-day intervals reads the
+ * same as one of twenty-two-day intervals. Summing retrievability says what it
+ * means: *about this many of these you could answer right now.*
+ *
+ * ⚠️ It is a **model output**, not a measurement, and it inherits everything
+ * the calibration chart says. A scheduler running optimistic draws an
+ * optimistic mastery, by about the same amount — which is why the figure on
+ * screen links there rather than standing on its own.
+ *
+ * Read off `cards` rather than replayed: `stability` and `last_review` on that
+ * table are the current state, already override-corrected, and the curve only
+ * needs those two. The replay in `memoryModel` exists to reconstruct the
+ * *past*; there is nothing to reconstruct about right now.
+ *
+ * Suspended cards are excluded. A card you have taken out of rotation is not a
+ * thing you have mastered and not a thing you have failed — it is not in the
+ * deck for this purpose.
+ *
+ * Rolled up in JS rather than with one recursive CTE per deck: the deck list
+ * asks about every deck at once, and the tree arrives flat and in path order
+ * from `deckTree()` anyway.
+ */
+export async function masteryByDeck(now = Date.now()): Promise<Map<string, Mastery>> {
+  const rows = await db.select<{ deck_id: string; stability: number; last_review: number | null }>(
+    `SELECT ${DECK_OF} AS deck_id, c.stability, c.last_review
+       FROM cards c
+       JOIN notes n ON n.id = c.note_id
+      WHERE c.suspended = 0`,
+  )
+
+  const own = new Map<string, Mastery>()
+  for (const r of rows) {
+    const cur = own.get(r.deck_id) ?? { remembered: 0, cards: 0 }
+    cur.remembered += r.last_review ? retrievability(r.stability, (now - r.last_review) / DAY) : 0
+    cur.cards += 1
+    own.set(r.deck_id, cur)
+  }
+
+  // Every deck's own cards plus everything beneath it, which is what a count on
+  // a collapsed parent already means everywhere else in the app.
+  const parents = await db.select<{ id: string; parent_id: string | null }>(
+    'SELECT id, parent_id FROM decks',
+  )
+  const parentOf = new Map(parents.map((d) => [d.id, d.parent_id]))
+  const total = new Map<string, Mastery>()
+
+  for (const [deckId, mine] of own) {
+    let at: string | null | undefined = deckId
+    const seen = new Set<string>()
+    // `seen` is a cycle guard, not an optimisation: `moveDeck` refuses to make
+    // a loop, but a corrupt or half-synced tree must not hang the deck list.
+    while (at && !seen.has(at)) {
+      seen.add(at)
+      const cur = total.get(at) ?? { remembered: 0, cards: 0 }
+      cur.remembered += mine.remembered
+      cur.cards += mine.cards
+      total.set(at, cur)
+      at = parentOf.get(at)
+    }
+  }
+
+  return total
+}

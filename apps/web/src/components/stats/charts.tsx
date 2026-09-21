@@ -15,6 +15,7 @@
  * the data colour.
  */
 import { useState, type ComponentType, type ReactNode } from 'react'
+import { Flame } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CalibrationBin } from '@recall/core'
 import type { DayCount, ForecastDay, HourRow, MemorisedDay } from '@/db/queries/stats'
@@ -853,5 +854,93 @@ export function Memorised({ days }: { days: MemorisedDay[] }) {
         above: an optimistic scheduler draws an optimistic line.
       </p>
     </Figure>
+  )
+}
+
+// ── this week, for the front door ─────────────────────────────────────────
+
+/**
+ * The week so far, as seven cells.
+ *
+ * The year heatmap answers "have I kept this up", which is a question for the
+ * dashboard. On the way in, the question is smaller and more useful: *did I
+ * study today, and how is this week going.* Seven cells answer it without the
+ * page becoming a chart.
+ *
+ * A calendar week, Monday to Sunday, rather than a trailing seven days — days
+ * that have not happened yet are drawn as empty outlines, which is the part a
+ * trailing window cannot show and the part that makes it read as a week with
+ * something left in it rather than a score.
+ */
+export function WeekActivity({ days, streak }: { days: DayCount[]; streak: number }) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  // Monday start: `getDay()` is 0 for Sunday, which would otherwise begin the
+  // week on the day most people think of as ending it.
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7))
+
+  const byDate = new Map(days.map((d) => {
+    const at = new Date(d.date)
+    at.setHours(0, 0, 0, 0)
+    return [at.getTime(), d.reviews]
+  }))
+
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const at = new Date(monday)
+    at.setDate(monday.getDate() + i)
+    const date = at.getTime()
+    return {
+      date,
+      reviews: byDate.get(date) ?? 0,
+      isToday: date === today.getTime(),
+      future: date > today.getTime(),
+    }
+  })
+
+  const done = week.reduce((s, d) => s + d.reviews, 0)
+  const busiest = Math.max(1, ...week.map((d) => d.reviews))
+  const initial = new Intl.DateTimeFormat(undefined, { weekday: 'narrow' })
+  const full = new Intl.DateTimeFormat(undefined, { weekday: 'long' })
+
+  return (
+    <div className={cn('flex items-center gap-4', RAMP)}>
+      <div className="flex gap-1.5" role="img"
+           aria-label={`This week: ${plural(done, 'review')}, ${plural(streak, 'day')} streak.`}>
+        {week.map((d) => (
+          <div key={d.date} className="flex flex-col items-center gap-1">
+            <span
+              title={`${full.format(d.date)}: ${d.future ? 'still to come' : plural(d.reviews, 'review')}`}
+              className={cn(
+                'size-7 rounded-sm transition-colors',
+                d.future
+                  ? 'border border-dashed border-border'
+                  : d.reviews === 0
+                    ? 'bg-border/60'
+                    : '',
+                d.isToday && 'ring-1 ring-hematoxylin ring-offset-1 ring-offset-background',
+              )}
+              style={d.future || !d.reviews ? undefined : {
+                background: `var(--h${Math.max(1, Math.min(5, Math.ceil((d.reviews / busiest) * 5)))})`,
+              }}
+            />
+            <span className="font-mono text-[0.5625rem] text-muted-foreground">
+              {initial.format(d.date)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="min-w-0">
+        <p className="font-mono text-xs text-muted-foreground">
+          {done ? `${done.toLocaleString()} this week` : 'nothing yet this week'}
+        </p>
+        {streak > 0 && (
+          <p className="flex items-center gap-1 font-mono text-xs text-hematoxylin">
+            <Flame className="size-3" /> {plural(streak, 'day')}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }

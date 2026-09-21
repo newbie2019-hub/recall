@@ -69,10 +69,31 @@ self.addEventListener('fetch', (event) => {
 
   if (!IMMUTABLE.test(url.pathname)) return
 
-  event.respondWith(
-    caches.match(event.request).then((hit) => hit ?? fetch(event.request).then((res) => {
-      if (res.ok) caches.open(CACHE).then((c) => c.put(event.request, res.clone()))
-      return res
-    })),
-  )
+  event.respondWith((async () => {
+    const hit = await caches.match(event.request)
+    if (hit) return hit
+
+    const res = await fetch(event.request)
+
+    // **Awaited, not fired and forgotten.** The original wrote the cache in a
+    // dangling `.then()` and the write never happened: a service worker is
+    // killed the moment the events it is handling settle, so a `put` nobody is
+    // waiting on is one the browser is free to drop — and it did, for every
+    // asset, on every load. The cache held `index.html` and nothing else,
+    // while the app still *appeared* to work offline because Chrome's own disk
+    // cache happened to have the rest. That is evictable and was never the
+    // plan; the e2e clears it before checking, which is what exposed this.
+    //
+    // Awaiting the put keeps `respondWith` pending, which is what keeps the
+    // worker alive. It costs one cache write on the first sight of each asset
+    // and nothing afterwards, because a hit returns above without fetching.
+    // (`waitUntil` here instead is the textbook answer and does not survive an
+    // `await` in Chrome — the event is no longer dispatching by then.)
+    if (res.ok) {
+      const copy = res.clone()
+      const cache = await caches.open(CACHE)
+      await cache.put(event.request, copy)
+    }
+    return res
+  })())
 })

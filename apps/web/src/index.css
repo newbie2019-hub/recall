@@ -158,3 +158,31 @@
   box-shadow: 0 0 0 1px var(--background), 0 0 0 2px var(--rule);
   clip-path: polygon(1.25rem 0, 100% 0, 100% 100%, 0 100%, 0 1.25rem);
 }
+
+/* ── The focus pill ───────────────────────────────────────────────────────
+   Two keyframes, both `motion-safe:` at the call site and both additionally
+   flattened by the reduced-motion block above — belt and braces, because this
+   is the one thing in the app that moves in the corner of your eye while you
+   are trying to concentrate on something else. */
+@keyframes focus-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Slight on purpose: 4% over four seconds reads as "alive" and not as "look
+   at me". Only ever applied to a focus block, never to a break. */
+@keyframes focus-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}

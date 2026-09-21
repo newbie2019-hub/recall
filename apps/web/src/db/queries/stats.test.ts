@@ -363,3 +363,41 @@ test('a deck brief counts its subdecks, and a sibling deck is not one', async ()
 
   assert.equal(await stats.deckFigures('nope'), null)
 })
+
+test('mastery sums recall, rolls up subdecks and ignores suspended cards', async () => {
+  // Built from scratch rather than on the shared fixture, so the numbers are
+  // hand-checkable: `R(S, S) = 0.9` by the definition of stability, so a card
+  // last seen exactly `stability` days ago is worth 0.9 and nothing else has
+  // to be trusted.
+  sqlite.exec(`
+    INSERT INTO decks (id, parent_id, name, retention_target, new_per_day) VALUES
+      ('mx', NULL, 'Mastery', 0.9, 20), ('mxc', 'mx', 'Child', 0.9, 20);
+    INSERT INTO notes (id, note_type, deck_id, fields, tags, guid, updated_at) VALUES
+      ('mn1','nt','mx','{"Front":"a","Back":"b"}','','gm1',0),
+      ('mn2','nt','mx','{"Front":"c","Back":"d"}','','gm2',0),
+      ('mn3','nt','mx','{"Front":"e","Back":"f"}','','gm3',0),
+      ('mn4','nt','mxc','{"Front":"g","Back":"h"}','','gm4',0);
+    INSERT INTO cards (id, note_id, ord, due, state, stability, last_review, suspended) VALUES
+      ('mn1:0','mn1',0,${NOW},'review',10,${ago(10)},0),
+      ('mn2:0','mn2',0,${NOW},'new',0,NULL,0),
+      ('mn3:0','mn3',0,${NOW},'review',10,${ago(10)},1),
+      ('mn4:0','mn4',0,${NOW},'review',20,${ago(20)},0);
+  `)
+
+  const all = await stats.masteryByDeck(NOW)
+
+  const child = all.get('mxc')!
+  assert.equal(child.cards, 1)
+  assert.ok(Math.abs(child.remembered - 0.9) < 1e-9, `R(S,S) is 0.9, got ${child.remembered}`)
+
+  const parent = all.get('mx')!
+  // Two of its own (the suspended one is not in the deck for this purpose)
+  // plus the child's.
+  assert.equal(parent.cards, 3)
+  // 0.9 + 0 (never reviewed, so nothing is remembered) + 0.9 from the child.
+  assert.ok(Math.abs(parent.remembered - 1.8) < 1e-9, `expected 1.8, got ${parent.remembered}`)
+
+  // The number people actually see, and the reason a never-reviewed card has to
+  // count in the denominator: a deck of new cards is 0% mastered, not 100%.
+  assert.equal(Math.round((parent.remembered / parent.cards) * 100), 60)
+})
