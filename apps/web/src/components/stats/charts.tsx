@@ -16,7 +16,8 @@
  */
 import { useState, type ComponentType, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import type { DayCount, ForecastDay, HourRow } from '@/db/queries/stats'
+import type { CalibrationBin } from '@recall/core'
+import type { DayCount, ForecastDay, HourRow, MemorisedDay } from '@/db/queries/stats'
 
 /**
  * The sequential ramp, light→dark, one hue (hematoxylin).
@@ -313,7 +314,9 @@ const PITCH = CELL + 2 // the 2px surface gap, same width everywhere
  * maximum: one 900-card catch-up after a holiday would otherwise flatten every
  * ordinary day to the lightest step and the chart would say nothing.
  */
-export function Heatmap({ days, streak }: { days: DayCount[]; streak: number }) {
+export function Heatmap({
+  days, streak, title = 'A year of reviews',
+}: { days: DayCount[]; streak: number; title?: string }) {
   const active = days.filter((d) => d.reviews > 0).map((d) => d.reviews).sort((a, b) => a - b)
   const cap = active.length ? active[Math.floor(active.length * 0.9)]! : 1
   const step = (n: number) => (n === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil((n / cap) * 5))))
@@ -326,7 +329,7 @@ export function Heatmap({ days, streak }: { days: DayCount[]; streak: number }) 
 
   return (
     <Figure
-      title="A year of reviews"
+      title={title}
       hint={`${plural(total, 'review')} on ${plural(active.length, 'day')} · ${plural(streak, 'day')} streak`}
     >
       <svg
@@ -658,6 +661,197 @@ export function AnswerTimeHistogram({
           </span>
         ))}
       </div>
+    </Figure>
+  )
+}
+
+// ── calibration: the caveat that licenses every other number here ──────────
+
+/**
+ * What the scheduler predicted against what actually happened.
+ *
+ * Every model-derived figure on this screen — burden, "days until 80%", the
+ * memorised curve below — is exactly as true as FSRS's fit for this person.
+ * Nothing said whether that fit was any good, so this does. It is only possible
+ * because `reviews` is append-only and the scheduler is a pure fold: stopping
+ * the fold before each past answer reconstructs what the model believed at that
+ * moment. Anki does not store historical retrievability and cites that as the
+ * blocker on its own automated-leech thread.
+ *
+ * A dot plot with the diagonal drawn, not a bar chart. Position against a
+ * reference line is the whole message — **a point below the line is a promise
+ * that was not kept** — and the axis zooms to the range that has data, which a
+ * bar chart could not honestly do (truncating a bar axis is the classic
+ * lie-by-length; position carries no zero-baseline obligation).
+ *
+ * Area scales with the square root of the bin's count, so a bin holding nine
+ * reviews cannot shout as loudly as one holding nine thousand. Bins under
+ * `minReviews` are drawn hollow and make no claim, which is the same
+ * suppression rule `TimeOfDay` uses.
+ */
+export function Calibration({
+  bins, error, minReviews = 30,
+}: {
+  bins: CalibrationBin[]
+  error: { bias: number; rmse: number; n: number }
+  minReviews?: number
+}) {
+  const SIZE = 168
+  const PAD = 30
+
+  // Zoomed to the data, floored so the diagonal always has room to read as a
+  // diagonal. Predictions cluster at the top; a full 0–1 square would spend
+  // four fifths of itself on a range nobody's cards live in.
+  const lo = Math.min(0.5, ...bins.map((b) => b.from), ...bins.map((b) => b.observed))
+  const hi = 1
+  const at = (v: number) => PAD + ((v - lo) / (hi - lo)) * SIZE
+  const y = (v: number) => PAD + SIZE - ((v - lo) / (hi - lo)) * SIZE
+  const maxN = Math.max(1, ...bins.map((b) => b.n))
+
+  const off = Math.abs(error.bias) * 100
+  const verdict = error.n === 0
+    ? 'not enough answered to say yet'
+    : off < 1.5
+      ? `the scheduler is calling it right, over ${plural(error.n, 'answer')}`
+      : `running ${off.toFixed(1)}pp ${error.bias > 0 ? 'optimistic' : 'pessimistic'} over ${plural(error.n, 'answer')}`
+
+  return (
+    <Figure title="Is the scheduler right about you?" hint={verdict}>
+      <svg
+        viewBox={`0 0 ${SIZE + PAD * 2} ${SIZE + PAD * 2}`}
+        className="mx-auto w-full max-w-[22rem]"
+        role="img"
+        aria-label={`Predicted recall against observed recall. The scheduler is ${verdict}.`}
+      >
+        {/* The promise. Everything on it was predicted correctly. */}
+        <line
+          x1={at(lo)} y1={y(lo)} x2={at(hi)} y2={y(hi)}
+          className="stroke-border" strokeWidth="1" strokeDasharray="3 3"
+        />
+        <line x1={PAD} y1={PAD + SIZE} x2={PAD + SIZE} y2={PAD + SIZE} className="stroke-border" strokeWidth="1" />
+        <line x1={PAD} y1={PAD} x2={PAD} y2={PAD + SIZE} className="stroke-border" strokeWidth="1" />
+
+        {bins.map((b) => {
+          const thin = b.n < minReviews
+          return (
+            <circle
+              key={b.from}
+              cx={at(b.predicted)}
+              cy={y(b.observed)}
+              r={3 + Math.sqrt(b.n / maxN) * 6}
+              className={thin ? 'fill-none stroke-[var(--h3)]' : 'fill-[var(--h4)]'}
+              strokeWidth="1.5"
+              data-label={
+                `predicted ${pct(b.predicted)}, recalled ${pct(b.observed)} · ${plural(b.n, 'answer')}`
+                + (thin ? ' (too few to claim)' : '')
+              }
+            />
+          )
+        })}
+
+        {[lo, (lo + 1) / 2, 1].map((v) => (
+          <text key={`x${v}`} x={at(v)} y={PAD + SIZE + 14} textAnchor="middle"
+                className="fill-muted-foreground font-mono text-[9px]">
+            {pct(v)}
+          </text>
+        ))}
+        {[lo, (lo + 1) / 2, 1].map((v) => (
+          <text key={`y${v}`} x={PAD - 6} y={y(v) + 3} textAnchor="end"
+                className="fill-muted-foreground font-mono text-[9px]">
+            {pct(v)}
+          </text>
+        ))}
+        <text x={PAD + SIZE / 2} y={SIZE + PAD * 2 - 4} textAnchor="middle"
+              className="fill-muted-foreground font-sans text-[9px]">
+          predicted
+        </text>
+        <text x={10} y={PAD + SIZE / 2} textAnchor="middle"
+              transform={`rotate(-90 10 ${PAD + SIZE / 2})`}
+              className="fill-muted-foreground font-sans text-[9px]">
+          actually recalled
+        </text>
+      </svg>
+
+      <p className="mx-auto mt-2 max-w-prose text-xs text-muted-foreground">
+        {error.n === 0
+          ? 'A card has to be answered at least once after a real gap before its prediction can be scored.'
+          : error.bias > 0
+            ? 'Points below the dashed line are answers the scheduler expected you to get and you did not — intervals running long. The figure is weighted by how many answers fell in each bin.'
+            : 'Points above the dashed line are cards you held better than predicted — intervals running short, which costs time rather than memory.'}
+      </p>
+    </Figure>
+  )
+}
+
+// ── memorised over time ────────────────────────────────────────────────────
+
+/**
+ * How much the collection holds, day by day.
+ *
+ * The same replay as `Calibration`, read the other way: a card's stability on
+ * each past day, run back through the forgetting curve and summed. Anki ships
+ * the scalar — "you remember N cards" — and the time series is one of the most
+ * requested graphs on its forums, because the scalar cannot tell growth from a
+ * plateau from a slide.
+ *
+ * It is a *model output*, not a measurement, which is why it is drawn directly
+ * under the calibration chart and never above it. If the scheduler is running
+ * optimistic, this line is too, by about the same amount.
+ */
+export function Memorised({ days }: { days: MemorisedDay[] }) {
+  const W = 640
+  const H = 120
+  const max = Math.max(1, ...days.map((d) => d.remembered))
+  const last = days.at(-1)
+  const firstNonZero = days.find((d) => d.remembered > 0)
+  const gained = last && firstNonZero ? last.remembered - firstNonZero.remembered : 0
+
+  const x = (i: number) => (i / Math.max(1, days.length - 1)) * W
+  const y = (v: number) => H - (v / max) * (H - 10)
+
+  const line = days.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(d.remembered).toFixed(1)}`).join(' ')
+
+  return (
+    <Figure
+      title="Cards you can still recall"
+      hint={
+        last
+          ? `${Math.round(last.remembered).toLocaleString()} of ${plural(last.cards, 'card')} studied`
+            + (gained ? ` · ${gained > 0 ? '+' : ''}${Math.round(gained).toLocaleString()} over ${days.length} days` : '')
+          : 'nothing studied yet'
+      }
+    >
+      <svg viewBox={`0 0 ${W} ${H + 16}`} className="w-full" role="img"
+           aria-label={`Recallable cards over the last ${days.length} days, now about ${Math.round(last?.remembered ?? 0)}.`}>
+        <line x1="0" y1={H} x2={W} y2={H} className="stroke-border" strokeWidth="1" />
+        <path d={`${line} L${W} ${H} L0 ${H} Z`} className="fill-[var(--h1)] opacity-40" />
+        <path d={line} className="fill-none stroke-[var(--h5)]" strokeWidth="1.5" />
+
+        {/* One hover target per day, invisible, so the readout works without
+            365 marks or a tooltip layer. */}
+        {days.map((d, i) => (
+          <rect
+            key={d.date}
+            x={x(i) - W / days.length / 2} y="0"
+            width={W / days.length} height={H}
+            className="fill-transparent"
+            data-label={`${new Date(d.date).toLocaleDateString()}: about ${Math.round(d.remembered).toLocaleString()} recallable`}
+          />
+        ))}
+
+        {[0, Math.floor(days.length / 2), days.length - 1].map((i) => (
+          <text key={i} x={Math.min(Math.max(x(i), 12), W - 12)} y={H + 12} textAnchor="middle"
+                className="fill-muted-foreground font-mono text-[9px]">
+            {i === days.length - 1 ? 'today' : `−${days.length - 1 - i}d`}
+          </text>
+        ))}
+      </svg>
+
+      <p className="mt-2 max-w-prose text-xs text-muted-foreground">
+        The sum of the model's recall probability across every card you have studied —
+        not a count of cards. It is a model output, so read it against the calibration
+        above: an optimistic scheduler draws an optimistic line.
+      </p>
     </Figure>
   )
 }

@@ -288,6 +288,39 @@ test('answering a card buries its siblings, and rule 4 sees it immediately', asy
   assert.deepEqual(await stats.burySiblings('n2:0', 'n2', NOW), [], 'a note with one card')
 })
 
+test('the model is scored against itself, and the memory curve starts empty', async () => {
+  // The replay is the app's one structural advantage over Anki, so the risk is
+  // not the arithmetic — `memory.test.ts` covers that — it is the plumbing:
+  // grouping the log by card, dropping first sights, and walking the day
+  // boundaries without smearing a card's stability backwards in time.
+  const model = await stats.memoryModel(400, 3650)
+
+  // 30 + 12 + 13 answers, less one first sight per card: a card being seen for
+  // the first time was never predicted and cannot be a calibration failure.
+  assert.equal(model.error.n, 52)
+  assert.ok(model.calibration.length > 0)
+  for (const b of model.calibration) {
+    assert.ok(b.predicted > b.from - 1e-9 && b.predicted <= b.to + 1e-9, 'a bin holds its own range')
+    assert.ok(b.observed >= 0 && b.observed <= 1)
+  }
+
+  // This fixture is crafted to fail far more than predicted, so the scheduler
+  // must read as optimistic. A negative bias here would mean the sign is
+  // inverted, which is the one bug on this chart nobody would notice.
+  assert.ok(model.error.bias > 0, `expected an optimistic bias, got ${model.error.bias}`)
+
+  assert.equal(model.memorised.length, 400)
+  // The oldest review in the fixture is 300 days old, so a year and a bit ago
+  // nothing was held. A non-zero here means stability leaked backwards past the
+  // review that created it.
+  assert.equal(model.memorised[0]!.remembered, 0)
+  assert.equal(model.memorised[0]!.cards, 0)
+
+  const today = model.memorised.at(-1)!
+  assert.ok(today.remembered > 0 && today.cards > 0, 'something is held today')
+  assert.ok(today.remembered <= today.cards, 'Σ R can never exceed the cards it sums over')
+})
+
 test('a deck brief counts its subdecks, and a sibling deck is not one', async () => {
   // The rollup is the whole risk here: `Anatomy` on the deck list means
   // `Anatomy` and everything under it, and a briefing that quietly meant only

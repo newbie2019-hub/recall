@@ -22,8 +22,8 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  AnswerTimeHistogram, Composition, Forecast, Heatmap, RankedBars, RetentionMeter,
-  Tile, TimeHeatmap, TimeOfDay, duration,
+  AnswerTimeHistogram, Calibration, Composition, Forecast, Heatmap, Memorised,
+  RankedBars, RetentionMeter, Tile, TimeHeatmap, TimeOfDay, duration,
 } from '@/components/stats/charts'
 import { Briefing } from '@/components/stats/Briefing'
 import { Leeches, WorstTopics } from '@/components/stats/Weaknesses'
@@ -52,6 +52,7 @@ interface Data {
   counts: stats.CardCounts
   load: stats.Workload
   app: { appMs: number; reviewMs: number }
+  model: stats.MemoryModel
 }
 
 /**
@@ -84,7 +85,7 @@ export function StatsPage() {
       // worker queue them rather than paying a round-trip latency each.
       const [
         retention, topics, forecast, daily, hours, leeches,
-        minutes, decks, times, buttons, counts, load, app,
+        minutes, decks, times, buttons, counts, load, app, model,
       ] = await Promise.all([
         stats.retention(days),
         stats.worstTopics(days),
@@ -99,10 +100,13 @@ export function StatsPage() {
         stats.cardCounts(),
         stats.workload(),
         stats.appTime(7),
+        // The only read that folds the whole log rather than aggregating in
+        // SQL. Issued with the rest so the worker queues it behind them.
+        stats.memoryModel(90, days),
       ])
       setData({
         retention, topics, forecast, days: daily, hours, leeches,
-        minutes, decks, times, buttons, counts, load, app,
+        minutes, decks, times, buttons, counts, load, app, model,
       })
       setError(null)
     } catch (e) {
@@ -279,6 +283,17 @@ function Dashboard({
             ))}
           </div>
         </section>
+      )}
+
+      {/* ── is the model right, and what does it say we hold ──
+          The caveat first, then the number it licenses. Both come out of the
+          same replay, and the order is the argument: a model output drawn
+          above the check on that model is a number nobody should act on. */}
+      {view === 'progress' && data.model.error.n > 0 && (
+        <Calibration bins={data.model.calibration} error={data.model.error} />
+      )}
+      {view === 'progress' && data.model.error.n > 0 && (
+        <Memorised days={data.model.memorised} />
       )}
 
       {/* ── weaknesses, named ── */}

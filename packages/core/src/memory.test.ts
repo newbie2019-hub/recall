@@ -8,8 +8,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  daysUntil, failureSurprise, halfLifeMultiplier, replayWithRetrievability,
-  retrievability, type PredictedReview,
+  calibrate, calibrationError, daysUntil, failureSurprise, halfLifeMultiplier,
+  replayWithRetrievability, retrievability, type PredictedReview,
 } from './memory.ts'
 
 test('stability is defined as the days until recall falls to 90%', () => {
@@ -109,4 +109,46 @@ test('the same failure count is more damning on an easy card', () => {
   const onEasy = failureSurprise(runs(20, 4, 0.97))
   const onHard = failureSurprise(runs(20, 4, 0.7))
   assert.ok(onEasy < onHard, 'failing what you were expected to know is the worse signal')
+})
+
+test('a perfectly calibrated log reports no bias', () => {
+  // 90 of 100 recalled at a predicted 0.9 is the scheduler being exactly right.
+  const { bias, rmse, n } = calibrationError(calibrate(runs(100, 10, 0.9)))
+  assert.equal(n, 100)
+  assert.ok(Math.abs(bias) < 1e-9, `expected no bias, got ${bias}`)
+  assert.ok(rmse < 1e-9)
+})
+
+test('bias is signed, and positive means the scheduler is optimistic', () => {
+  // Predicted 0.9, delivered 0.7 — intervals running long. The sign is the
+  // whole message: an unsigned error cannot tell "too long" from "too short",
+  // which is the only actionable thing on the chart.
+  const optimistic = calibrationError(calibrate(runs(100, 30, 0.9)))
+  assert.ok(Math.abs(optimistic.bias - 0.2) < 1e-9, `expected +0.2, got ${optimistic.bias}`)
+
+  const pessimistic = calibrationError(calibrate(runs(100, 5, 0.9)))
+  assert.ok(pessimistic.bias < 0, 'delivering better than promised reads negative')
+})
+
+test('a first sight is not a calibration failure', () => {
+  // It was never predicted. Counting it would make every new card look like a
+  // miss and drag the whole figure.
+  assert.deepEqual(calibrate(runs(5, 5, 0)), [])
+  assert.equal(calibrationError(calibrate(runs(5, 5, 0))).n, 0)
+})
+
+test('the bins are weighted by how many reviews fell in them', () => {
+  // A bin holding nine reviews must not shout as loudly as one holding nine
+  // hundred — that is how a calibration figure ends up reporting noise.
+  const many = runs(900, 90, 0.9)     // perfectly calibrated
+  const few = runs(9, 9, 0.35)        // wildly off, and tiny
+  const { bias } = calibrationError(calibrate([...many, ...few]))
+  assert.ok(Math.abs(bias) < 0.01, `the small bin must barely move it, got ${bias}`)
+})
+
+test('reviews land in the bin their prediction belongs to', () => {
+  const bins = calibrate([...runs(10, 1, 0.95), ...runs(10, 5, 0.55)])
+  assert.equal(bins.length, 2)
+  assert.deepEqual(bins.map((b) => [b.from, b.n]), [[0.5, 10], [0.9, 10]])
+  assert.ok(Math.abs(bins[1]!.observed - 0.9) < 1e-9)
 })

@@ -12,8 +12,10 @@
  */
 import { db } from '../client.ts'
 import {
-  detectLeech, siblingsToBury, nextDayStart, stripHtml, LEECH_TAG,
-  type LeechVerdict, type LeechOptions, type Review, type CardStateName,
+  calibrate, calibrationError, detectLeech, replayWithRetrievability,
+  retrievability, siblingsToBury, nextDayStart, stripHtml, LEECH_TAG,
+  type CalibrationBin, type LeechVerdict, type LeechOptions, type PredictedReview,
+  type Review, type CardStateName,
 } from '@recall/core'
 
 const DAY = 86_400_000
@@ -936,5 +938,123 @@ export async function deckFigures(deckId: string, sinceDays = 365, now = Date.no
     mature_tested: recall?.mature_tested ?? 0,
     mature_passed: recall?.mature_passed ?? 0,
     median_answer_ms: times.length ? times[times.length >> 1]!.ms : 0,
+  }
+}
+
+// ── the model, checked against itself ─────────────────────────────────────
+
+export interface MemorisedDay {
+  date: number
+  /** Σ R across every card that had been reviewed by this day. */
+  remembered: number
+  /** How many cards contributed anything at all. */
+  cards: number
+}
+
+export interface MemoryModel {
+  calibration: CalibrationBin[]
+  /** Positive bias means the scheduler expected to be right more often than it was. */
+  error: { bias: number; rmse: number; n: number }
+  memorised: MemorisedDay[]
+}
+
+/**
+ * What the model predicted, what actually happened, and how much is held.
+ *
+ * Both halves come out of the same replay, which is why they are one function.
+ * `replayWithRetrievability` re-derives what FSRS believed before every past
+ * answer — possible here because `reviews` is append-only and the scheduler is
+ * a pure fold, and *not* possible in Anki, which does not store historical
+ * retrievability and cites that as the blocker on its own automated-leech
+ * thread.
+ *
+ * **Calibration** is the caveat that licenses every other model-derived number
+ * on the dashboard. **Memorised over time** is the same replay read the other
+ * way: the stability a card had on each past day, run back through the curve.
+ *
+ * Two judgement calls worth knowing:
+ *
+ * Every card that has ever been reviewed is replayed, not only the ones
+ * answered inside the window. A card last seen two hundred days ago still holds
+ * some recall today, and dropping it would undercount exactly the mature
+ * material the figure is about. Calibration then scores only the answers inside
+ * the window, because that is the period being asked about.
+ *
+ * `forgotten_at` is honoured the way `replayReviews` honours it — a forgotten
+ * card's earlier answers are not part of the memory it has now.
+ *
+ * ponytail: the whole review log is replayed in the tab, on demand. It is a
+ * second or two for a personal collection and the page already asked for it;
+ * move the fold into a worker the first time somebody with 500k reviews waits.
+ */
+export async function memoryModel(days = 90, sinceDays = 365, now = Date.now()): Promise<MemoryModel> {
+  const rows = await db.select<{
+    card_id: string; id: string; ts: number; rating: number; duration_ms: number
+    note_id: string; ord: number; created_at: number; forgotten_at: number | null
+    retention_target: number
+  }>(
+    `SELECT r.id, r.card_id, r.ts, r.rating, r.duration_ms,
+            c.note_id, c.ord, c.created_at, c.forgotten_at, d.retention_target
+       FROM reviews r
+       JOIN cards c ON c.id = r.card_id
+       JOIN notes n ON n.id = c.note_id
+       JOIN decks d ON d.id = ${DECK_OF}
+      ORDER BY r.card_id, r.ts`,
+  )
+
+  const since = now - sinceDays * DAY
+  const first = startOfDay(now) - (days - 1) * DAY
+  const boundaries = Array.from({ length: days }, (_, i) => first + i * DAY)
+  const remembered = new Array<number>(days).fill(0)
+  const holding = new Array<number>(days).fill(0)
+  const scored: PredictedReview[] = []
+
+  let i = 0
+  while (i < rows.length) {
+    const head = rows[i]!
+    let j = i
+    while (j < rows.length && rows[j]!.card_id === head.card_id) j++
+
+    // A forgotten card's earlier answers are not part of what it holds now —
+    // the same filter `replayReviews` applies, for the same reason.
+    const history = rows.slice(i, j)
+      .filter((r) => head.forgotten_at == null || r.ts > head.forgotten_at) as Review[]
+    i = j
+
+    if (!history.length) continue
+
+    const { card, reviews } = replayWithRetrievability(
+      { id: head.card_id, note_id: head.note_id, ord: head.ord },
+      history,
+      head.retention_target,
+      Math.max(head.created_at, head.forgotten_at ?? 0),
+    )
+
+    for (const r of reviews) if (r.ts >= since) scored.push(r)
+
+    // Stability *after* review k is the stability review k+1 went in with, and
+    // the last one's is the card's current state. Stability only moves on an
+    // answer, so these are the only points that exist.
+    let k = 0
+    for (let d = 0; d < days; d++) {
+      const at = boundaries[d]!
+      if (reviews[0]!.ts > at) continue
+      while (k + 1 < reviews.length && reviews[k + 1]!.ts <= at) k++
+      const stability = k + 1 < reviews.length ? reviews[k + 1]!.stability : card.stability
+      const r = retrievability(stability, (at - reviews[k]!.ts) / DAY)
+      remembered[d]! += r
+      if (r > 0) holding[d]! += 1
+    }
+  }
+
+  const bins = calibrate(scored)
+  return {
+    calibration: bins,
+    error: calibrationError(bins),
+    memorised: boundaries.map((date, d) => ({
+      date,
+      remembered: remembered[d]!,
+      cards: holding[d]!,
+    })),
   }
 }

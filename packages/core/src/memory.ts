@@ -191,3 +191,76 @@ export function surpriseOverTime(reviews: PredictedReview[]): { ts: number; p: n
 
 /** Below this, a card fails so much more than predicted that it is a leech. */
 export const LEECH_ALPHA = 0.01
+
+// ── calibration: was the prediction any good? ─────────────────────────────
+
+export interface CalibrationBin {
+  /** The bin's predicted-recall range, e.g. 0.8 → 0.9. */
+  from: number
+  to: number
+  /** Mean predicted recall of the reviews that landed here. */
+  predicted: number
+  /** The share of them that were actually recalled. */
+  observed: number
+  n: number
+}
+
+/**
+ * Predicted recall against what actually happened, bucketed.
+ *
+ * **This is the caveat that licenses every other model-derived number in the
+ * app.** "You remember 4,312 cards" is exactly as true as FSRS's fit for this
+ * learner, and nothing on the dashboard says whether that fit is any good.
+ * Here it can be asked directly, because `replayWithRetrievability` can
+ * reconstruct what the model believed before every past answer — which Anki
+ * cannot do, since it does not store historical retrievability.
+ *
+ * Equal-width bins over the predicted probability, which is the SRS
+ * benchmark's own `RMSE(bins)` construction rather than one invented here. A
+ * first sight is dropped: it was never predicted, and scoring it would make
+ * every new card read as a calibration failure.
+ */
+export function calibrate(reviews: PredictedReview[], bins = 10): CalibrationBin[] {
+  const acc = Array.from({ length: bins }, (_, i) => ({
+    from: i / bins, to: (i + 1) / bins, sum: 0, hits: 0, n: 0,
+  }))
+
+  for (const r of reviews) {
+    if (!(r.predicted > 0)) continue
+    const i = Math.min(bins - 1, Math.floor(r.predicted * bins))
+    const bin = acc[i]!
+    bin.sum += r.predicted
+    bin.hits += r.recalled ? 1 : 0
+    bin.n += 1
+  }
+
+  return acc
+    .filter((b) => b.n > 0)
+    .map((b) => ({
+      from: b.from, to: b.to,
+      predicted: b.sum / b.n,
+      observed: b.hits / b.n,
+      n: b.n,
+    }))
+}
+
+/**
+ * The two numbers worth saying out loud about a calibration.
+ *
+ * `bias` is signed and is the one a person can act on: **positive means the
+ * scheduler is optimistic** — it expected to be right more often than it was,
+ * so intervals are running long. `rmse` is the spread, and is the benchmark's
+ * comparable figure.
+ *
+ * Both are weighted by how many reviews fell in each bin. An unweighted mean
+ * lets a bin holding nine reviews shout as loudly as one holding nine thousand,
+ * which on a real log is how a calibration figure ends up reporting noise.
+ */
+export function calibrationError(bins: CalibrationBin[]): { bias: number; rmse: number; n: number } {
+  const n = bins.reduce((s, b) => s + b.n, 0)
+  if (!n) return { bias: 0, rmse: 0, n: 0 }
+
+  const bias = bins.reduce((s, b) => s + b.n * (b.predicted - b.observed), 0) / n
+  const mse = bins.reduce((s, b) => s + b.n * (b.predicted - b.observed) ** 2, 0) / n
+  return { bias, rmse: Math.sqrt(mse), n }
+}
