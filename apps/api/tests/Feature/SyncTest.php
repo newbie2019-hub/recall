@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Deck;
+use App\Models\MediaFile;
 use App\Models\Review;
 use App\Models\User;
 use App\Services\Auth\AuthService;
 use App\Services\Auth\DeviceIdentity;
+use App\Services\Media\MediaStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -54,6 +56,50 @@ class SyncTest extends TestCase
             'new_per_day' => 20,
             'client_updated_at' => $updatedAt,
         ];
+    }
+
+    public function test_a_device_can_announce_media_it_holds(): void
+    {
+        // This was a 500 on every sync from an account with any media, and it
+        // had no test because `media` is the one resource whose rows the client
+        // does not key by `id` — so the push path inserted without a primary
+        // key, and without a `path`, and MySQL refused both. The two working
+        // creation paths (`MediaStore` and the importer) hand over an `id` and
+        // write the file first, which is why nothing caught it.
+        $sha = str_repeat('a1', 32);
+
+        $this->push(['media' => [[
+            'sha256' => $sha,
+            'mime' => 'image/png',
+            'size' => 75_608,
+            'client_updated_at' => 1_700_000_001_000,
+        ]]])
+            ->assertOk()
+            ->assertJsonPath('data.applied.media', 1);
+
+        $row = MediaFile::query()->where('sha256', $sha)->sole();
+        $this->assertNotEmpty($row->id, 'the row names its own key');
+        $this->assertSame($this->user->id, $row->user_id);
+        // Announced, not uploaded: the bytes arrive on the media endpoint, and
+        // until they do there is nothing to point `path` at.
+        $this->assertNull($row->path);
+        $this->assertNull($row->completed_at);
+    }
+
+    public function test_announced_media_is_not_offered_for_download_until_the_bytes_land(): void
+    {
+        // The half of the fix that matters: a row with no bytes must be
+        // invisible to everything that would try to serve it, or the fix for a
+        // 500 becomes a 404 somewhere further away.
+        $sha = str_repeat('b2', 32);
+        $this->push(['media' => [[
+            'sha256' => $sha, 'mime' => 'image/png', 'size' => 10,
+            'client_updated_at' => 1_700_000_001_000,
+        ]]])->assertOk();
+
+        $store = app(MediaStore::class);
+        $this->assertNull($store->find($this->user, $sha));
+        $this->assertSame([], $store->held($this->user, [$sha]));
     }
 
     public function test_a_push_comes_back_on_a_pull_in_the_order_it_was_written(): void
