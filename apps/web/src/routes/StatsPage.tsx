@@ -133,7 +133,7 @@ export function StatsPage() {
     )
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div>
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         {/* No "back to decks": every in-app screen sits inside `AppShell`, whose
             bar already carries Decks. A second way up that only some pages have

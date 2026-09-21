@@ -83,7 +83,7 @@ export function DeckListPage() {
   const visible = (decks ?? []).filter((d) => !hidden.has(d.id))
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div>
       <header className="mb-10">
         <h1 className="font-display text-5xl tracking-tight">Recall</h1>
         <p className="mt-1 text-sm text-muted-foreground">

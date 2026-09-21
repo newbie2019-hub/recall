@@ -151,7 +151,7 @@ export function BrowsePage() {
   const pages = Math.max(1, Math.ceil(total / PAGE))
 
   return (
-    <main className="mx-auto w-full max-w-7xl">
+    <div>
       <header className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-display text-4xl tracking-tight">Browse</h1>
         <div className="flex items-center gap-3">
@@ -220,6 +220,6 @@ export function BrowsePage() {
           )}
         </div>
       </div>
-    </main>
+    </div>
   )
 }

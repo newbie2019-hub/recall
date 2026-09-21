@@ -85,7 +85,7 @@ export function Browse({
   )
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div>
       <header className="mb-6">
         <Button variant="ghost" size="sm" className="-ml-2 mb-3 text-muted-foreground" onClick={onBack}>
           <ChevronLeft /> All decks

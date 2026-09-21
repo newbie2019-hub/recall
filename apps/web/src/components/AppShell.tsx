@@ -52,7 +52,7 @@ export function AppShell() {
     <FocusProvider>
      <div className="min-h-dvh">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2 px-4 sm:px-6">
+        <div className={cn(MEASURE, 'flex h-14 items-center gap-2')}>
           <NavLink to={paths.decks} className="font-display text-xl tracking-tight">
             Recall
           </NavLink>
@@ -137,10 +137,14 @@ export function AppShell() {
         </div>
       </header>
 
-      {/* No width cap here on purpose. Each screen sets its own measure, the
-          way it did before this shell existed: a card browser wants the whole
-          window and a page of prose does not, and one number cannot be both. */}
-      <main className="w-full px-4 py-10 sm:px-6">
+      {/* The measure, in one place. It used to be "each screen sets its own",
+          which in practice meant the string was copied into fifteen files and
+          drifted: the deck list ended up at 672px and the browser at 1280,
+          either side of a header bar fixed at 1024 — content narrower and then
+          wider than the nav above it, which reads as two different apps.
+          A page that genuinely wants a narrower column still sets one *inside*
+          this, which is a typographic choice rather than a layout accident. */}
+      <main className={cn(MEASURE, 'py-10')}>
         <Outlet />
       </main>
 
@@ -159,6 +163,12 @@ export function AppShell() {
     </FocusProvider>
   )
 }
+
+/**
+ * How wide the app is. Changing it here changes the bar and the page together,
+ * which is the only way they can be guaranteed to agree.
+ */
+const MEASURE = 'mx-auto w-full max-w-5xl px-4 sm:px-6'
 
 const NAV = [
   { to: paths.decks, label: 'Decks', end: true },
