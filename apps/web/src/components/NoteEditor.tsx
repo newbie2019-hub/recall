@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select'
 import { CardFrame } from './CardFrame'
 import { OcclusionEditor } from './OcclusionEditor'
+import { SimEditor } from './SimEditor'
 import { ChangeNoteType } from './ChangeNoteType'
 import * as repo from '@/db/repo'
 import { PresenceBar } from '@/components/collab/PresenceBar'
@@ -485,6 +486,10 @@ export function NoteEditor({
         />
       ) : null}
 
+      {nt?.kind === 'simulation' ? (
+        <SimEditor fields={fields} onChange={(next) => setFields(next)} />
+      ) : null}
+
       <div className="mt-4 flex flex-wrap items-center gap-1">
         <Button type="button" size="icon-sm" variant="ghost" aria-label="Bold"
                 onMouseDown={(e) => e.preventDefault()}
@@ -518,7 +523,11 @@ export function NoteEditor({
 
       <div className="mt-4 space-y-4">
         {nt?.fields
+          // The four machine-readable fields of a simulation note are written
+          // by `SimEditor` above; showing them as rich-text boxes invites
+          // somebody to hand-edit JSON that a dropdown already writes.
           .filter((f) => nt.kind !== 'occlusion' || !['Occlusion', 'Image'].includes(f))
+          .filter((f) => nt.kind !== 'simulation' || !['Model', 'Parameters', 'Change', 'Target'].includes(f))
           .map((f, i) => (
             <FieldBox
               key={f}

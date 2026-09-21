@@ -248,16 +248,30 @@ test('a broken template does not take the deck down with it', () => {
 test('every built-in generates the cards its name promises', () => {
   const expected: Record<string, number> = {
     basic: 1, 'basic-reversed': 2, 'basic-optional-reversed': 2, 'basic-type-in': 1,
-    cloze: 2, 'image-occlusion': 2,
+    cloze: 2, 'image-occlusion': 2, simulation: 1,
   }
   const filled: Record<string, string> = {
     Front: 'f', Back: 'b', 'Add Reverse': 'y',
     Text: '{{c1::a}} and {{c2::b}}', 'Back Extra': '',
     Occlusion: '[{"kind":"rect","ord":0,"x":0,"y":0,"w":1,"h":1},{"kind":"rect","ord":1,"x":0,"y":0,"w":1,"h":1}]',
     Image: '<img src="media/x">', Header: '', Comments: '',
+    // One simulation is one card, and it needs both a question and a model to
+    // be one at all.
+    Prompt: 'Afterload doubles. What happens to stroke volume?',
+    Model: 'ventricular-coupling', Parameters: '{}', Change: '{}', Target: 'sv', Notes: '',
   }
   for (const type of BUILTIN_NOTE_TYPES)
     assert.equal(generatedOrds(type, filled).length, expected[type.id], type.id)
+})
+
+test('a simulation note with no model makes no card', () => {
+  // The same rule a blank Front follows: a question with nothing to run is not
+  // a card, and generating one would put an unanswerable prompt in the queue.
+  const sim = BUILTIN_NOTE_TYPES.find((t) => t.id === 'simulation')!
+
+  assert.deepEqual(generatedOrds(sim, { Prompt: 'why?', Model: '' }), [])
+  assert.deepEqual(generatedOrds(sim, { Prompt: '', Model: 'windkessel' }), [])
+  assert.deepEqual(generatedOrds(sim, { Prompt: 'why?', Model: 'windkessel' }), [0])
 })
 
 // ── cloze parsing ─────────────────────────────────────────────────────────

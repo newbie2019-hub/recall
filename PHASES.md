@@ -753,7 +753,33 @@ chart marks not keyboard-focusable.
 
 ---
 
-## Phase 12 — Interactive sim cards · ~1 week
+## Phase 12 — Interactive sim cards · ~1 week · ✅
+
+> **What landed.** Four models in `packages/core/src/simulation/`, each one
+> closed-form or forward Euler with no solver dependency: ventricular–arterial
+> coupling, the 2-element Windkessel, Hodgkin–Huxley and two-compartment PK.
+> The card asks for a number *before* it shows one, then puts your guess beside
+> the answer — a prediction you committed to and got wrong is the whole
+> mechanism, and a card that just drew the curve would be a diagram with a
+> scheduler attached.
+>
+> This is the one card kind that is not HTML, and rule 5 is the reason rather
+> than preference: card content renders in a script-less iframe *because it is
+> untrusted*, and a live chart cannot go in there. What makes the exception
+> safe is that **nothing reaches the model from the note except numbers** — the
+> note names a model, the model is ours, and an unrecognised name runs nothing.
+>
+> `SimEditor` means nobody types the JSON the fields store, and it computes the
+> answer live so a change that moves nothing is caught while authoring rather
+> than six weeks into reviewing it.
+>
+> **One bug worth recording**, because it failed silently: `write.ts` exported
+> every non-standard kind as cloze, so a simulation came back from its own
+> `.apkg` as a cloze note type, generated no cards — it has no cloze markers —
+> and its notes then vanished from the *next* export. Notes with no cards are
+> not an error, just an absence, which is why the e2e round-trip counts caught
+> it and nothing else did. Simulation now crosses the format as a plain note
+> type and is recognised coming back by its fields, exactly as occlusion is.
 
 Independent of 3D, and the best learning-value-per-line in the plan. Plain TS in
 `packages/core`, so React Native inherits it. See `SIMULATION.md`.
@@ -764,7 +790,8 @@ Independent of 3D, and the best learning-value-per-line in the plan. Plain TS in
 - Offline by construction — it is arithmetic.
 
 **Done when:** "afterload doubles, predict stroke volume" is a scheduled card
-that draws the real curve on reveal.
+that draws the real curve on reveal. ✅ — it is seeded, and the answer is that
+stroke volume falls 31%, not by half.
 
 ---
 
@@ -827,11 +854,11 @@ into a crowded field. Pull it forward the moment a medical cohort shows interest
 | Filtered decks | 7 | 1 | ✅ done |
 | Marketplace | 8 | 3 | ✅ done |
 | Collaboration | 9 | 2 | ✅ done |
-| Media transport | 8's tail | 1.5 | ← in progress |
-| AI | 10 | 3 | 10a ✅ |
-| Debt already costing | 11 | 1 | |
-| Sim cards | 12 | 1 | |
-| **Web launch-ready** | **0–12** | **~27.5** | ~6 remaining |
+| Media transport | 8's tail | 1.5 | ✅ done |
+| AI | 10 | 3 | ✅ done |
+| Debt already costing | 11 | 1 | ✅ done |
+| Sim cards | 12 | 1 | ✅ done |
+| **Web launch-ready** | **0–12** | **~27.5** | ← here |
 | Mobile | 13 | 3 | deferred indefinitely |
 
 The old table said ~19 weeks to launch. It did not carry deck creation, the

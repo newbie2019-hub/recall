@@ -45,9 +45,18 @@ export async function detectSchema(select: AnkiSelect): Promise<11 | 18> {
  * wearing a stock-kind marker, because Anki generates its cards from cloze
  * ordinals in the `Occlusion` field. We model it as its own kind, so the marker
  * is the only thing that can tell us.
+ *
+ * A simulation has no marker to wear, because Anki has no concept it could
+ * borrow: there, it is an ordinary note type whose fields happen to spell out a
+ * model and its parameters. So it is recognised the same way occlusion is —
+ * by the fields that make it one — and anywhere else it stays a plain note,
+ * which is the honest outcome rather than a lossy one.
  */
+const SIMULATION_FIELDS = ['Prompt', 'Model', 'Parameters', 'Target']
+
 function kindOf(kind: number, stock: number, fields: string[]): NoteType['kind'] {
   if (stock === STOCK_IMAGE_OCCLUSION && fields.includes('Occlusion')) return 'occlusion'
+  if (kind === 0 && SIMULATION_FIELDS.every((f) => fields.includes(f))) return 'simulation'
   return kind === 1 ? 'cloze' : 'standard'
 }
 

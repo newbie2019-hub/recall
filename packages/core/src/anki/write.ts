@@ -96,8 +96,11 @@ export function modelsJson(types: ExportNoteType[], now: number): string {
       id: mid,
       name: nt.name,
       // Occlusion is a cloze note type as far as Anki is concerned — that is
-      // what it is there, and what `read.ts` recognises coming back.
-      type: nt.kind === 'standard' ? 0 : 1,
+      // what it is there, and what `read.ts` recognises coming back. A
+      // simulation is *not*: it has no cloze markers, so calling it cloze
+      // makes it generate no cards at all, and notes with no cards do not
+      // survive the next export.
+      type: nt.kind === 'cloze' || nt.kind === 'occlusion' ? 1 : 0,
       mod: Math.floor(now / 1000),
       usn: -1,
       sortf: nt.sortField ?? 0,

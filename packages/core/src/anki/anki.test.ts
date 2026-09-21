@@ -8,7 +8,9 @@ import assert from 'node:assert/strict'
 import { crc32, readZip, unzip, zip } from '../zip.ts'
 import { decodeProto, protoInt, protoString } from './proto.ts'
 import { mediaNames, normaliseOcclusion, parseAnkiOcclusion, rewriteMedia } from './media.ts'
-import { ankiCsum, stripMedia } from './write.ts'
+import { ankiCsum, modelsJson, stripMedia } from './write.ts'
+import { readNoteTypes, type AnkiSelect } from './read.ts'
+import { BUILTIN_NOTE_TYPES } from '../notetypes.ts'
 
 const utf8 = new TextEncoder()
 
@@ -99,4 +101,22 @@ test("the exported checksum is Anki's, not ours", async () => {
   // It checksums the stripped sort field, so markup and media do not count.
   assert.equal(await ankiCsum('<b>mitral</b> [sound:x.mp3]'), await ankiCsum('mitral'))
   assert.equal(stripMedia('<div>a</div> [sound:b.mp3] [anki:tts]'), 'a')
+})
+
+test('a note type keeps its kind across an export and back', async () => {
+  // The bug this guards: a simulation exported as cloze comes back as cloze,
+  // generates no cards (it has no cloze markers), and its notes then vanish
+  // from the *next* export — silently, because a note with no cards is not
+  // wrong, it is just absent.
+  const types = BUILTIN_NOTE_TYPES.map((nt, i) => ({ nt, mid: 1000 + i, overrides: [] }))
+  const models = modelsJson(types, 1_700_000_000_000)
+
+  const select = (async (sql: string) =>
+    sql.includes('col') ? [{ models }] : []) as AnkiSelect
+  const back = await readNoteTypes(select, 11)
+
+  for (const { nt } of types) {
+    const found = back.find((b) => b.noteType.name === nt.name)
+    assert.equal(found?.noteType.kind, nt.kind, `${nt.name} came back as ${found?.noteType.kind}`)
+  }
 })

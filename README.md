@@ -31,7 +31,8 @@ Override the binary with `CHROME=/path/to/chrome`.
 
 ```
 packages/core     no DOM, no React. Schema, FSRS wrapper, replay, and the whole
-                  template engine — template/cloze/occlusion/diff/math. RN reuses this.
+                  template engine — template/cloze/occlusion/diff/math, and the
+                  simulation models. RN reuses this.
 apps/web/src/db   worker.ts (owns SQLite), client.ts (RPC), repo.ts (queries)
 apps/web/src/lib  media.ts (content-addressed store), render.ts (core → HTML)
 apps/web/src      App.tsx, components/{Review,Browse,NoteEditor,OcclusionEditor,CardFrame}.tsx
@@ -59,14 +60,26 @@ apps/api/app      Services/{Anki,Auth,Sync,Marketplace,Collaboration}/
 5. **Card HTML is untrusted and renders in a script-less iframe.** No
    `allow-scripts`, ever. Everything else follows from it: KaTeX renders in the
    parent, `{{hint:}}` compiles to `<details>`, occlusion is SVG not canvas, and
-   the type-in box is a React control outside the frame.
+   the type-in box is a React control outside the frame. Simulation cards are
+   the one kind rendered *outside* the frame rather than in it — permitted only
+   because nothing reaches them from the note but numbers: the note names one of
+   our models, and an unrecognised name runs nothing at all.
 
 ## Status
 
-Phases 0–9 complete: the storage spine, the offline study loop, the note and
+Phases 0–12 complete: the storage spine, the offline study loop, the note and
 card type engine, Anki import and export, the Laravel backend with auth and
 sync, the dashboard and card browser, filtered decks, the public marketplace
-with day-one moderation, and live co-editing over Reverb.
+with day-one moderation, live co-editing over Reverb, AI generation and
+grading against a billing ledger, server-side FSRS, and interactive simulation
+cards.
+
+**Simulation cards** ask for a number before they show one. Four models ship —
+ventricular–arterial coupling, the 2-element Windkessel, Hodgkin–Huxley and
+two-compartment PK — each of them closed-form or forward Euler in a few dozen
+lines, so they are offline by construction and mobile inherits them for free.
+Doubling afterload drops stroke volume by 31%; the card exists because almost
+everyone predicts 50%.
 
 **An account is now required.** A fresh browser lands on sign-in, then on a
 six-question welcome survey. What has not changed is the rule underneath it: a

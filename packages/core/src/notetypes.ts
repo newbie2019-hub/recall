@@ -32,7 +32,16 @@ export interface NoteType {
    * one card per ordinal from a single template — cloze scans every field for
    * `{{c<N>::…}}`, occlusion reads the shape list in `ordField`.
    */
-  kind: 'standard' | 'cloze' | 'occlusion'
+  /**
+   * `simulation` is the one kind whose card is not HTML.
+   *
+   * Its fields carry a model name and numbers; the answer is rendered by a real
+   * React component outside the sandboxed `CardFrame`. That is only safe
+   * because nothing authored by a user or a model is ever executed — the
+   * simulation is ours, and the note only chooses which one and with what
+   * values. See `simulation/types.ts`.
+   */
+  kind: 'standard' | 'cloze' | 'occlusion' | 'simulation'
   /** Occlusion only: the field holding the shape JSON. */
   ordField?: string
   /** Natives are replaced on upgrade; imports are never touched. */
@@ -118,6 +127,26 @@ export const BUILTIN_NOTE_TYPES: NoteType[] = [
         name: 'Cloze',
         qfmt: '{{cloze:Text}}',
         afmt: '{{cloze:Text}}{{#Back Extra}}<div class="extra">{{Back Extra}}</div>{{/Back Extra}}',
+      },
+    ],
+  },
+  {
+    id: 'simulation',
+    name: 'Simulation',
+    // `Model` names one of `SIM_MODELS`; `Parameters` and `Change` are JSON
+    // objects of numbers; `Target` names the output being predicted. The
+    // templates below are only ever used for the *question* — the answer side
+    // is a component, not markup.
+    fields: ['Prompt', 'Model', 'Parameters', 'Change', 'Target', 'Notes'],
+    kind: 'simulation',
+    css: '',
+    builtin: true,
+    templates: [
+      {
+        name: 'Simulation',
+        qfmt: '<div class="sim-prompt">{{Prompt}}</div>',
+        afmt: '<div class="sim-prompt">{{Prompt}}</div>'
+          + '{{#Notes}}<div class="extra">{{Notes}}</div>{{/Notes}}',
       },
     ],
   },

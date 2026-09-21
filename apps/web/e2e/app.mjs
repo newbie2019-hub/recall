@@ -256,10 +256,10 @@ ok(noScript, 'card frame carries a content security policy')
 await until(`document.querySelector('iframe').contentDocument.body.innerText.trim().length > 0`, 'front rendered')
 ok((await frames()).trim().length > 0, 'card content renders inside the frame')
 
-// 18 cards exist across the seed; Neuroanatomy's daily limit holds 2 of them
+// 20 cards exist across the seed; Neuroanatomy's daily limit holds 2 of them
 // back, and the counter is meant to show the session, not the collection.
 const total = Number((await counter()).split('/')[1])
-ok(total === 16, `the counter shows today's session, not every card (${total}/16)`)
+ok(total === 18, `the counter shows today's session, not every card (${total}/18)`)
 
 await key(' ')
 await until(`document.body.innerText.includes('Again')`, 'reveal')

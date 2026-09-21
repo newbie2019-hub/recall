@@ -111,5 +111,38 @@ export const SEED = {
         'Add Reverse': 'y',
       },
     },
+
+    // Two simulation cards, so the kind is discoverable without anybody having
+    // to be told it exists. The first is the one Phase 12 was built for: most
+    // people predict stroke volume halves when afterload doubles, and it falls
+    // by about a third — you cannot be wrong about that until you commit to a
+    // number, which is the difference between this card and a diagram.
+    {
+      deck: 'thorax', type: 'simulation', tags: ['physiology'],
+      fields: {
+        Prompt: 'A patient\'s afterload doubles. Predict the new stroke volume.',
+        Model: 'ventricular-coupling',
+        Parameters: '{"edv":120,"ees":2,"ea":1.6,"v0":15,"hr":70}',
+        Change: '{"key":"ea","to":3.2}',
+        Target: 'sv',
+        Notes: 'SV = Ees·(EDV − V₀) / (Ees + Ea). Afterload is in the denominator '
+          + '<em>with</em> contractility, so doubling it never halves the output — '
+          + 'and a strong ventricle barely notices.',
+      },
+    },
+    {
+      deck: 'pharm', type: 'simulation', tags: ['pk'],
+      fields: {
+        Prompt: 'The same drug, but renal failure halves elimination. '
+          + 'Predict the terminal half-life.',
+        Model: 'two-compartment-pk',
+        Parameters: '{"dose":500,"vc":15,"k10":0.15,"k12":0.8,"k21":0.4,"hours":24}',
+        Change: '{"key":"k10","to":0.075}',
+        Target: 'halfLife',
+        Notes: 'The terminal half-life is set by the slower eigenvalue, not by k₁₀ alone — '
+          + 'which is why it is always longer than ln2/k₁₀ and why redistribution, '
+          + 'not elimination, is what ends a single dose.',
+      },
+    },
   ],
 }

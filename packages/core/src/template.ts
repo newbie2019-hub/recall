@@ -228,6 +228,14 @@ export function generatedOrds(nt: NoteType, fields: Record<string, string>): num
   }
   if (nt.kind === 'occlusion') return occlusionOrds(fields[nt.ordField ?? 'Occlusion'] ?? '')
 
+  // One simulation, one card. The prompt and the model are what make it a
+  // question, so a note with either missing makes no card — the same rule a
+  // blank Front follows.
+  if (nt.kind === 'simulation') {
+    const has = (name: string) => !isEmpty(fields[name] ?? '')
+    return has('Prompt') && has('Model') ? [0] : []
+  }
+
   // Empty fields are normalised to '' first, so a Front holding nothing but a
   // stray `<br>` from the editor renders identically to a blank note and makes
   // no card — Anki's behaviour, and the difference between 1 card and 0.
