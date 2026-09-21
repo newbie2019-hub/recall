@@ -10,6 +10,7 @@ use App\Exceptions\ApiException;
 use App\Models\AiUsage;
 use App\Models\User;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
@@ -48,11 +49,24 @@ use Throwable;
  *   prompt. The response shape is constrained by a `strict` tool, so the only
  *   thing the model can express is the schema's own fields. It cannot emit
  *   markup because the schema has nowhere to put markup (AI.md §6.8).
+ * - **A quota is a read, and the charge it authorises lands a second later.**
+ *   Two calls that check at the same moment are both told the same dollar is
+ *   theirs. One lock per account, held for the length of a call, makes the
+ *   check and the charge a single operation — see `call()`.
  */
 final class Claude
 {
     /** Anthropic's own rate limit, retried here where it can still be counted. */
     private const RATE_LIMIT_RETRIES = 2;
+
+    /**
+     * How long an in-flight call may hold its account's lock.
+     *
+     * Longer than the HTTP timeout, so a call that times out honestly still
+     * holds the lock it took; finite, so a process killed mid-call does not
+     * lock an account out of its own allowance until somebody notices.
+     */
+    private const LOCK_SECONDS = 120;
 
     public function __construct(private readonly Ledger $ledger) {}
 
@@ -63,13 +77,60 @@ final class Claude
     }
 
     /**
-     * One call, one ledger row.
+     * One call, one ledger row — and one at a time per account.
+     *
+     * The lock is the guardrail, not a queue. `canSpend` reads a `SUM` and the
+     * charge it authorises is written a second or two later, so two requests
+     * that arrive together are both told the whole remaining allowance is
+     * theirs and both spend it. On a $0.25 plan that is the difference between
+     * a limit and a suggestion.
+     *
+     * Taken rather than waited for, which is deliberate: a blocking wait ties
+     * up a PHP worker for as long as somebody else's model call, and the
+     * honest answer to "you already have a request running" is to say so. It
+     * is the same rule `AiJobController` already applies to documents, applied
+     * to every call.
+     *
+     * Scoped per user, so one account's sweep never delays another's.
      *
      * @param  array<int, array<string, mixed>>  $messages
      * @param  array<string, mixed>|null  $tool  a `strict` tool, when the answer must have a shape
      * @return array<string, mixed> the assistant's structured result
      */
     public function call(
+        User $user,
+        AiFeature $feature,
+        string $system,
+        array $messages,
+        ?array $tool = null,
+        int $maxTokens = 1024,
+        ?string $jobId = null,
+        int $estimateMicros = 0,
+    ): array {
+        $lock = Cache::lock("ai:call:{$user->id}", self::LOCK_SECONDS);
+
+        if (! $lock->get()) {
+            throw new ApiException(
+                ApiErrorCode::RateLimited,
+                'One AI request at a time. This one is still running — try again in a moment.',
+            );
+        }
+
+        try {
+            return $this->spend($user, $feature, $system, $messages, $tool, $maxTokens, $jobId, $estimateMicros);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * The call itself, inside the lock.
+     *
+     * @param  array<int, array<string, mixed>>  $messages
+     * @param  array<string, mixed>|null  $tool
+     * @return array<string, mixed>
+     */
+    private function spend(
         User $user,
         AiFeature $feature,
         string $system,
@@ -93,7 +154,7 @@ final class Claude
         // Checked per call, against the current spend. See AI.md §6.6: a quota
         // checked once per job is a quota that stopped existing at the second
         // call.
-        if (! $this->ledger->canSpend($user, $estimateMicros)) {
+        if (! $this->ledger->canSpend($user, $estimateMicros, $jobId)) {
             throw new ApiException(
                 ApiErrorCode::AiQuotaExceeded,
                 'You have used this month\'s AI allowance.',

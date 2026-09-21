@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Ai;
 
+use App\Models\AiJob;
 use App\Models\AiUsage;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * What has been spent, and what is left.
@@ -40,9 +42,62 @@ final readonly class Ledger
         return (int) config("ai.plans.{$user->ai_plan}.limit_micros", 0);
     }
 
-    public function remaining(User $user): int
+    /**
+     * Micro-dollars promised to work that has not been charged for yet.
+     *
+     * AI.md §3.4: one upload is eight generation calls plus three grading
+     * calls, so the money is committed at dispatch and spent over the next few
+     * minutes. Between those two moments the allowance looked untouched —
+     * `canSpend` summed `ai_usage` and nothing else — which meant a queued job
+     * and an interactive call could each be told the same dollar was theirs.
+     *
+     * Counted from the job's *status* rather than released by a completion
+     * hook: a reservation that has to be explicitly returned is a reservation
+     * that leaks the first time a worker dies mid-run, and the leak is
+     * invisible because it looks exactly like normal spending.
+     *
+     * A running job's real rows are already in {@see spent()}, so its
+     * reservation is reduced by what it has actually charged. Without that
+     * subtraction a job would be counted twice for its whole run and the
+     * allowance would sag in the middle of the thing it was reserved for.
+     *
+     * `$exceptJob` is how a job spends the money it reserved. Its own
+     * reservation is not an obstacle to its own calls — AI.md §3.4 step 2 —
+     * and without this a document whose estimate used the last of an allowance
+     * would reserve itself into a deadlock and never make its first call.
+     */
+    public function reserved(User $user, ?string $exceptJob = null): int
     {
-        return max(0, $this->limit($user) - $this->spent($user));
+        $jobs = AiJob::query()
+            ->where('user_id', $user->id)
+            ->whereIn('status', [AiJob::STATUS_QUEUED, AiJob::STATUS_RUNNING])
+            ->when($exceptJob !== null, fn ($q) => $q->whereKeyNot($exceptJob))
+            ->pluck('reserved_micros', 'id');
+
+        if ($jobs->isEmpty()) {
+            return 0;
+        }
+
+        $charged = AiUsage::query()
+            ->selectRaw('job_id, SUM(cost_micros) AS micros')
+            ->whereIn('job_id', $jobs->keys())
+            ->groupBy('job_id')
+            ->pluck('micros', 'job_id');
+
+        // A job that overran its estimate contributes nothing further: the
+        // overrun is already real spend, and the estimate was only ever a
+        // ceiling (AI.md §3.4).
+        $outstanding = 0;
+        foreach ($jobs as $id => $reserved) {
+            $outstanding += max(0, (int) $reserved - (int) ($charged[$id] ?? 0));
+        }
+
+        return $outstanding;
+    }
+
+    public function remaining(User $user, ?string $exceptJob = null): int
+    {
+        return max(0, $this->limit($user) - $this->spent($user) - $this->reserved($user, $exceptJob));
     }
 
     /**
@@ -52,9 +107,9 @@ final readonly class Ledger
      * eight generation calls plus three grading calls, and a check that passed
      * at the start has been irrelevant since the second one (AI.md §6.6).
      */
-    public function canSpend(User $user, int $estimateMicros = 0): bool
+    public function canSpend(User $user, int $estimateMicros = 0, ?string $exceptJob = null): bool
     {
-        return $this->remaining($user) >= max(0, $estimateMicros);
+        return $this->remaining($user, $exceptJob) >= max(0, $estimateMicros);
     }
 
     /**
@@ -69,14 +124,23 @@ final readonly class Ledger
     {
         $start = $this->periodStart($user);
 
+        // The token columns are summed alongside the dollars because they are
+        // the part of the bill that does not move when a price does: a rate
+        // change reprices history, and "how much did I send" is the question
+        // that still has the same answer afterwards.
         $rows = AiUsage::query()
-            ->selectRaw('feature, COUNT(*) AS calls, SUM(cost_micros) AS micros')
+            ->selectRaw(
+                'feature, COUNT(*) AS calls, SUM(cost_micros) AS micros,'
+                .' SUM(input_tokens) AS input_tokens, SUM(cache_write_tokens) AS cache_write_tokens,'
+                .' SUM(cache_read_tokens) AS cache_read_tokens, SUM(output_tokens) AS output_tokens'
+            )
             ->where('user_id', $user->id)
             ->where('created_at', '>=', $start)
             ->groupBy('feature')
             ->get();
 
         $spent = (int) $rows->sum('micros');
+        $reserved = $this->reserved($user);
         $limit = $this->limit($user);
 
         return [
@@ -85,15 +149,42 @@ final readonly class Ledger
             'period_end' => $start->copy()->addMonth()->toIso8601String(),
             'spent_micros' => $spent,
             'limit_micros' => $limit,
-            'remaining_micros' => max(0, $limit - $spent),
+            // Shown rather than silently deducted: an allowance that reads
+            // smaller than the sum of the calls below it is a number nobody
+            // can check, and "a document you are still processing has claimed
+            // this much" is a sentence with an answer.
+            'reserved_micros' => $reserved,
+            'remaining_micros' => max(0, $limit - $spent - $reserved),
+            'tokens' => $this->tokens($rows),
             'by_feature' => $rows
                 ->mapWithKeys(fn ($r) => [$r->feature => [
                     'calls' => (int) $r->calls,
                     'micros' => (int) $r->micros,
+                    'tokens' => $this->tokens(collect([$r])),
                 ]])
                 ->all(),
             'consented' => $user->ai_consent_at !== null,
             'available' => Claude::configured(),
+        ];
+    }
+
+    /**
+     * Tokens, as Anthropic counts them.
+     *
+     * The two cache figures are kept apart from `input` rather than folded in,
+     * because they are priced differently (1.25x to write, 0.10x to read) and
+     * a single "input" number would make the dollars beside it unexplainable.
+     *
+     * @param  Collection<int, AiUsage>  $rows
+     * @return array{input: int, cache_write: int, cache_read: int, output: int}
+     */
+    private function tokens($rows): array
+    {
+        return [
+            'input' => (int) $rows->sum('input_tokens'),
+            'cache_write' => (int) $rows->sum('cache_write_tokens'),
+            'cache_read' => (int) $rows->sum('cache_read_tokens'),
+            'output' => (int) $rows->sum('output_tokens'),
         ];
     }
 

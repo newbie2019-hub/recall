@@ -125,6 +125,28 @@ export function Ai() {
             : `Allowance spent. It resets ${new Date(usage.period_end).toLocaleDateString()}.`}
         </p>
 
+        {/* Named rather than silently deducted. An allowance that reads smaller
+            than the calls listed below it is a number nobody can check. */}
+        {usage.reserved_micros > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {dollars(usage.reserved_micros)} of that is held for a document still being
+            processed. It goes back if the run costs less than its estimate.
+          </p>
+        )}
+
+        {/* Tokens, not only dollars. A price change reprices the whole history;
+            "how much did I send" is the question that still has the same answer
+            afterwards — and it is the number that can be read straight off the
+            Anthropic console. */}
+        {tokenTotal(usage.tokens) > 0 && (
+          <p className="font-mono text-[0.6875rem] text-muted-foreground">
+            {usage.tokens.input.toLocaleString()} in · {usage.tokens.output.toLocaleString()} out
+            {usage.tokens.cache_read + usage.tokens.cache_write > 0 &&
+              ` · ${(usage.tokens.cache_read + usage.tokens.cache_write).toLocaleString()} cached`}
+            {' '}tokens
+          </p>
+        )}
+
         {Object.keys(usage.by_feature).length > 0 && (
           <dl className="grid gap-x-6 gap-y-1 pt-2 font-mono text-xs sm:grid-cols-2">
             {Object.entries(usage.by_feature).map(([feature, row]) => (
@@ -133,7 +155,9 @@ export function Ai() {
                   {FEATURE[feature] ?? feature}
                   <span className="ml-2 opacity-60">×{row.calls}</span>
                 </dt>
-                <dd className="tabular-nums">{dollars(row.micros)}</dd>
+                <dd className="tabular-nums" title={`${tokenTotal(row.tokens).toLocaleString()} tokens`}>
+                  {dollars(row.micros)}
+                </dd>
               </div>
             ))}
           </dl>
@@ -155,7 +179,12 @@ const FEATURE: Record<string, string> = {
   grade: 'Grading cards',
   generate: 'Generating cards',
   brief: 'Weakness briefing',
+  rewrite: 'Rewriting a card',
 }
+
+/** Cache reads and writes are tokens too — they are just priced differently. */
+const tokenTotal = (t: AiUsage['tokens']) =>
+  t.input + t.cache_write + t.cache_read + t.output
 
 /** Four decimal places, because a call costs a fraction of a cent. */
 const dollars = (micros: number) => `$${(micros / 1_000_000).toFixed(4)}`

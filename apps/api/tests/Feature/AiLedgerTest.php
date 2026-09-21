@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\AiFeature;
 use App\Exceptions\ApiException;
+use App\Models\AiJob;
 use App\Models\AiUsage;
 use App\Models\User;
 use App\Services\Ai\Claude;
@@ -14,7 +15,9 @@ use App\Services\Ai\Pricing;
 use App\Services\Auth\AuthService;
 use App\Services\Auth\DeviceIdentity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -188,6 +191,130 @@ class AiLedgerTest extends TestCase
         $this->assertSame(1, AiUsage::query()->count(), 'a refused call never reached the API');
     }
 
+    // ── the guardrails around concurrency ─────────────────────────────────
+
+    public function test_money_promised_to_a_queued_job_is_not_offered_twice(): void
+    {
+        // The hole this closes: `reserved_micros` was written at dispatch and
+        // read by nothing. A document costing almost the whole allowance would
+        // sit in the queue while an interactive call was told the allowance was
+        // untouched — and then the job overran the month.
+        $user = $this->consentingAccount();
+        config(['ai.plans.free.limit_micros' => 30_000]);
+        $this->fakeAnthropic(['input_tokens' => 1000, 'output_tokens' => 500]);
+
+        $this->queuedJob($user, reserved: 25_000);
+
+        $this->assertSame(25_000, app(Ledger::class)->reserved($user));
+        $this->assertSame(5_000, app(Ledger::class)->remaining($user));
+
+        try {
+            app(Claude::class)->call(
+                $user, AiFeature::Explain, 'sys', [['role' => 'user', 'content' => 'hi']],
+                estimateMicros: 12_000,
+            );
+            $this->fail('a call larger than the unreserved remainder must be refused');
+        } catch (ApiException $e) {
+            $this->assertSame('ai_quota_exceeded', $e->errorCode->value);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_a_job_may_spend_the_money_it_reserved(): void
+    {
+        // Without the exemption a document whose estimate used the last of an
+        // allowance would reserve itself into a deadlock and never make its
+        // first call — the guardrail eating the thing it was guarding.
+        $user = $this->consentingAccount();
+        config(['ai.plans.free.limit_micros' => 30_000]);
+        $this->fakeAnthropic(['input_tokens' => 1000, 'output_tokens' => 500]);
+
+        $job = $this->queuedJob($user, reserved: 30_000);
+
+        app(Claude::class)->call(
+            $user, AiFeature::Explain, 'sys', [['role' => 'user', 'content' => 'hi']],
+            jobId: $job->id, estimateMicros: 12_000,
+        );
+
+        $this->assertSame(1, AiUsage::query()->count());
+    }
+
+    public function test_a_reservation_shrinks_as_its_job_actually_spends(): void
+    {
+        // Counted twice, a running job would halve the allowance in the middle
+        // of the work it was reserved for.
+        $user = $this->consentingAccount();
+        $job = $this->queuedJob($user, reserved: 30_000);
+        $this->fakeAnthropic(['input_tokens' => 1000, 'output_tokens' => 500]);
+
+        app(Claude::class)->call(
+            $user, AiFeature::Explain, 'sys', [['role' => 'user', 'content' => 'hi']],
+            jobId: $job->id,
+        );
+
+        // 17,500 of the 30,000 is now real spend, so 12,500 is still promised.
+        $this->assertSame(17_500, app(Ledger::class)->spent($user));
+        $this->assertSame(12_500, app(Ledger::class)->reserved($user));
+    }
+
+    public function test_a_finished_job_stops_holding_its_reservation(): void
+    {
+        // Released by status rather than by a completion hook: a reservation
+        // that has to be handed back leaks the first time a worker dies, and
+        // the leak looks exactly like ordinary spending.
+        $user = $this->consentingAccount();
+        $job = $this->queuedJob($user, reserved: 25_000);
+
+        $this->assertSame(25_000, app(Ledger::class)->reserved($user));
+
+        $job->update(['status' => AiJob::STATUS_DONE]);
+
+        $this->assertSame(0, app(Ledger::class)->reserved($user->fresh()));
+    }
+
+    public function test_one_call_at_a_time_per_account(): void
+    {
+        // `canSpend` is a read and the charge it authorises lands a second
+        // later, so two simultaneous requests are both told the same dollar is
+        // theirs. The lock makes the check and the charge one operation.
+        $user = $this->consentingAccount();
+        Http::fake();
+
+        $held = Cache::lock("ai:call:{$user->id}", 120);
+        $this->assertTrue($held->get(), 'the first caller takes the lock');
+
+        try {
+            app(Claude::class)->call($user, AiFeature::Explain, 'sys', [['role' => 'user', 'content' => 'hi']]);
+            $this->fail('a second simultaneous call must be refused');
+        } catch (ApiException $e) {
+            $this->assertSame('rate_limited', $e->errorCode->value);
+        } finally {
+            $held->release();
+        }
+
+        Http::assertNothingSent();
+        $this->assertSame(0, AiUsage::query()->count(), 'a refused call never reached the API');
+    }
+
+    public function test_the_lock_is_released_when_a_call_fails(): void
+    {
+        // A lock held by a call that threw would lock the account out of its
+        // own allowance for two minutes.
+        $user = $this->consentingAccount();
+        Http::fake(['*' => Http::response(['error' => 'boom'], 500)]);
+
+        try {
+            app(Claude::class)->call($user, AiFeature::Explain, 'sys', [['role' => 'user', 'content' => 'hi']]);
+        } catch (ApiException) {
+            // expected — the point is what happens to the lock.
+        }
+
+        $next = Cache::lock("ai:call:{$user->id}", 120);
+        $this->assertTrue($next->get(), 'the lock did not outlive the failed call');
+        $next->release();
+    }
+
     public function test_the_period_start_is_stored_once_and_not_recomputed(): void
     {
         // A window derived from `now()` on each request grants a second
@@ -250,6 +377,13 @@ class AiLedgerTest extends TestCase
             ->assertJsonPath('data.spent_micros', 17_500)
             ->assertJsonPath('data.by_feature.explain.calls', 1)
             ->assertJsonPath('data.by_feature.explain.micros', 17_500)
+            // Tokens as well as dollars: a price change reprices history, and
+            // "how much did I send" is the question that still has the same
+            // answer afterwards.
+            ->assertJsonPath('data.tokens.input', 1000)
+            ->assertJsonPath('data.tokens.output', 500)
+            ->assertJsonPath('data.by_feature.explain.tokens.input', 1000)
+            ->assertJsonPath('data.reserved_micros', 0)
             ->assertJsonPath('data.consented', true);
     }
 
@@ -345,6 +479,21 @@ class AiLedgerTest extends TestCase
             'content' => $content,
             'usage' => $usage,
         ], 200)]);
+    }
+
+    private function queuedJob(User $user, int $reserved): AiJob
+    {
+        return AiJob::query()->create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'kind' => 'source',
+            'source_name' => 'lecture.pdf',
+            'status' => AiJob::STATUS_QUEUED,
+            'stage' => 'extracting',
+            'total' => 8,
+            'estimated_micros' => $reserved,
+            'reserved_micros' => $reserved,
+        ]);
     }
 
     private function account(): User

@@ -130,14 +130,35 @@ export interface SyncPushResult {
  * a counter, so the total in Settings and the total on the Anthropic invoice
  * are the same query over the same rows (AI.md §3.2).
  */
+export interface AiTokens {
+  input: number
+  cache_write: number
+  cache_read: number
+  output: number
+}
+
 export interface AiUsage {
   plan: string
   period_start: string
   period_end: string
   spent_micros: number
   limit_micros: number
+  /**
+   * Promised to a document still being processed, and already deducted from
+   * `remaining_micros`. Shown rather than silently subtracted: an allowance
+   * that reads smaller than the calls beneath it is a number nobody can check.
+   */
+  reserved_micros: number
   remaining_micros: number
-  by_feature: Record<string, { calls: number; micros: number }>
+  /**
+   * What was actually sent and received, as Anthropic counts it.
+   *
+   * Kept beside the dollars rather than instead of them, because the two
+   * answer different questions: a price change reprices the whole history, and
+   * the token count is the part of the bill that does not move.
+   */
+  tokens: AiTokens
+  by_feature: Record<string, { calls: number; micros: number; tokens: AiTokens }>
   /** Whether this account has turned the subsystem on. Nothing is sent until it has. */
   consented: boolean
   /** Whether the server has an API key at all. */
@@ -197,6 +218,23 @@ export interface AiCandidate {
   dimension: string
   reason: string
   source_excerpt: string | null
+}
+
+/**
+ * A suggested rewrite of a card being written.
+ *
+ * `fields` holds **only what would change** — a field that came back identical
+ * is not a suggestion, and an accept button on a box nothing happened to is a
+ * lie about the diff. Plain text, never markup: it is stripped on the way out
+ * of the server and inserted as text here, because README rule 5 gives card
+ * HTML a sandboxed frame precisely because it is untrusted.
+ *
+ * Nothing is applied until the person applies it, one field at a time.
+ */
+export interface AiRewrite {
+  fields: Record<string, string>
+  /** What changed and why — or why nothing did. */
+  note: string
 }
 
 /** Two paragraphs over figures the model was given, never ones it computed. */
