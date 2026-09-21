@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
 import { MIGRATIONS } from '@recall/core'
+import { migrationStamp, reconcile } from './reconcile.ts'
 
 /**
  * One dedicated worker per tab; exactly one of them owns the database.
@@ -95,6 +96,16 @@ async function open() {
       db.exec(`PRAGMA user_version = ${i + 1}`)
     })
   }
+
+  // Only when the migration text has changed since this database was built.
+  // On every ordinary launch this is one pragma read and nothing else, which is
+  // why the check can afford to be on the open path at all.
+  const stamp = migrationStamp()
+  if (Number(db.selectValue('PRAGMA application_id') ?? 0) !== stamp) {
+    reconcile(db, () => new sqlite3.oo1.DB())
+    db.exec(`PRAGMA application_id = ${stamp}`)
+  }
+
   return db
 }
 
