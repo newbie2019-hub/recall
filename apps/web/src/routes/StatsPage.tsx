@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import {
-  Activity, ArrowLeft, Bug, CalendarClock, Clock, Flame, Gauge, Hourglass,
+  Activity, Bug, CalendarClock, Clock, Flame, Gauge, Hourglass,
   Layers, Target, TrendingUp,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -135,12 +135,10 @@ export function StatsPage() {
   return (
     <div className="mx-auto w-full max-w-5xl">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Button variant="ghost" size="sm" className="-ml-2 mb-1" onClick={() => navigate(paths.decks)}>
-            <ArrowLeft /> Decks
-          </Button>
-          <h1 className="font-display text-4xl tracking-tight">Stats</h1>
-        </div>
+        {/* No "back to decks": every in-app screen sits inside `AppShell`, whose
+            bar already carries Decks. A second way up that only some pages have
+            reads as a hierarchy that does not exist. */}
+        <h1 className="font-display text-4xl tracking-tight">Stats</h1>
         <Tabs value={range} onValueChange={(v) => setRange(v as typeof range)}>
           <TabsList>
             {RANGES.map((r) => (

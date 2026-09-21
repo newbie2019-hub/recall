@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link, Navigate, NavLink, useParams } from 'react-router'
-import { ChevronLeft } from 'lucide-react'
+import { Navigate, NavLink, useParams } from 'react-router'
 import { Ai } from '@/components/settings/Ai'
 import { Appearance } from '@/components/settings/Appearance'
 import { Data } from '@/components/settings/Data'
@@ -75,14 +74,10 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
+      {/* No "back to decks": `AppShell`'s bar is above this on every screen and
+          already carries Decks. */}
       <header className="mb-8">
-        <Link
-          to={paths.decks}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="size-4" /> Decks
-        </Link>
-        <h1 className="mt-2 font-display text-4xl tracking-tight">Settings</h1>
+        <h1 className="font-display text-4xl tracking-tight">Settings</h1>
       </header>
 
       {/* Two columns, the sections narrow and the content wide. A row of links
