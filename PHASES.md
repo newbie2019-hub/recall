@@ -10,8 +10,12 @@ assume one developer.
 **Status:** 0–4 ✅ · 5 ✅ (sign-in became a gate — see §5) · 6 ✅ · 7 ✅ · 8 ✅ ·
 9 ✅ (live cursors deferred, with the reason) · 10 ✅ (designed in
 [AI.md](AI.md)) · 11 ✅ (the debt that was already costing something, harvested
-from the tree rather than remembered) · **next: 12, interactive sim cards** ·
+from the tree rather than remembered) · 12 ✅ · 12.5 ✅ (Anki parity, picked by
+surveying the add-on ecosystem rather than by listing features) ·
 13 (mobile) deferred indefinitely at the product's request.
+
+**One thing is unpaid and it is not code:** nothing sets `email_verified_at`,
+so the marketplace cannot be published to by a real account. See §12.5.
 
 **Nothing is unpaid.** The media transport landed in §8 and server-side FSRS in
 §11 — the two items that carried a parenthesis in this line for six phases.
@@ -795,6 +799,55 @@ stroke volume falls 31%, not by half.
 
 ---
 
+## Phase 12.5 — Anki parity, chosen by evidence · ~1 week · ✅
+
+Not a planned phase. It came out of surveying the Anki add-on ecosystem
+(3,379 add-ons, ranked by AnkiWeb likes) against what this app already had,
+and then building only the gaps that the ranking says people actually feel.
+Scheduling was left alone on purpose: FSRS, load balancing, easy days and a
+workload simulator are all in Anki core now, and competing with a free,
+well-tuned default is not where the value is.
+
+- **Migration 10.** `cards.due_override` and `cards.forgotten_at` — the
+  durable form of "set due date" and "forget", applied by `replayReviews`
+  around the fold. They are in the `card_states` sync payload, which is the
+  point: that table carries what a *person decided* and withholds the FSRS
+  cache, and a date you picked is a decision. Before this, `bulkReschedule`
+  wrote `cards.due` and the date never left the device that chose it.
+  Also `notes.created_at` / `cards.created_at`, which Anki gets free because
+  its ids are timestamps and ours are UUIDs.
+- **Card info**, from the reviewer and from every browser row — with the
+  column Anki cannot draw: what the scheduler predicted before each answer,
+  from a replay truncated at that review.
+- **Forget**, **postpone/advance** (the one scheduling operation Anki core
+  still lacks), **find and replace**, **bulk delete**.
+- **Search**: `prop:` (`ivl s d r reps lapses due`), `added:`, `rated:`,
+  `nid:`, `re:`. No `OR`, no parentheses — `search.ts` explains why, and the
+  facet round-trip is the reason.
+- **Auto-advance** per deck, which never grades for you.
+- **`{{tts}}`** through the browser's own `speechSynthesis`.
+- **CSV and TSV**, in and out, with a column-mapping screen.
+
+> **Two bugs found while building, both worse than the features.**
+>
+> `ListingPolicy::publish` gates on `email_verified_at`, and nothing in the
+> app ever sets it — no route, no notification, and `register` does not.
+> Only `UserFactory` does, which is why 195 tests passed over a marketplace
+> no real user could publish to. **Still open** — it needs mail configured,
+> not just code.
+>
+> Laravel converts `""` to `null` on every request. All seven built-in note
+> types ship with `css: ''` and `note_types.css` is NOT NULL, so the *first
+> sync of every new account* was a 500, as was any push of an untagged note.
+> Every fixture in the suite carried non-empty text, which is exactly why
+> nothing caught it. Fixed, with a test whose fixtures are deliberately
+> empty.
+
+**Done when:** a spreadsheet imports, `prop:r<0.8 rated:30:1` finds the cards
+you are losing, and a due date set on one device is there on the next. ✅
+
+---
+
 ## Phase 13 — React Native mobile · ~3 weeks
 
 - Expo + `packages/core` unchanged. **op-sqlite** locally — *the same SQL and the
@@ -858,6 +911,7 @@ into a crowded field. Pull it forward the moment a medical cohort shows interest
 | AI | 10 | 3 | ✅ done |
 | Debt already costing | 11 | 1 | ✅ done |
 | Sim cards | 12 | 1 | ✅ done |
+| Anki parity, by evidence | 12.5 | 1 | ✅ done |
 | **Web launch-ready** | **0–12** | **~27.5** | ← here |
 | Mobile | 13 | 3 | deferred indefinitely |
 

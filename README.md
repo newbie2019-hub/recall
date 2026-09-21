@@ -67,12 +67,26 @@ apps/api/app      Services/{Anki,Auth,Sync,Marketplace,Collaboration}/
 
 ## Status
 
-Phases 0–12 complete: the storage spine, the offline study loop, the note and
+Phases 0–12.5 complete: the storage spine, the offline study loop, the note and
 card type engine, Anki import and export, the Laravel backend with auth and
 sync, the dashboard and card browser, filtered decks, the public marketplace
 with day-one moderation, live co-editing over Reverb, AI generation and
-grading against a billing ledger, server-side FSRS, and interactive simulation
-cards.
+grading against a billing ledger, server-side FSRS, interactive simulation
+cards, and a pass of Anki parity chosen by surveying its add-on ecosystem
+rather than by listing features.
+
+**Parity, where it was worth having.** Card info that shows what the scheduler
+predicted before each answer — the one thing Anki's own screen cannot draw,
+because it does not keep historical retrievability. Forget and set-due-date
+that survive a replay *and* reach your other devices. Postpone and advance,
+which Anki core still leaves to an add-on. `prop:`, `added:`, `rated:`, `nid:`
+and `re:` in search. Find and replace. Auto-advance that never grades for you.
+`{{tts}}` through the browser's own voice. CSV in and out, with a mapping
+screen, because most people's cards are in a spreadsheet and not in an `.apkg`.
+
+Scheduling itself was deliberately left alone: FSRS, load balancing, easy days
+and a workload simulator are all in Anki core now, and a second opinion about
+spacing is not what anybody is missing.
 
 **Simulation cards** ask for a number before they show one. Four models ship —
 ventricular–arterial coupling, the 2-element Windkessel, Hodgkin–Huxley and
