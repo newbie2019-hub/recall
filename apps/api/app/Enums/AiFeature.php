@@ -27,6 +27,17 @@ enum AiFeature: string
     /** Two paragraphs over weakness numbers the model is *given*. */
     case Brief = 'brief';
 
+    /**
+     * The grader's missing half: a card rewritten as a suggestion.
+     *
+     * Separate from `Grade` rather than folded into it, because the two have
+     * different models, different costs and different risks — grading is a
+     * cheap judgement over twenty cards, rewriting is one card and puts words
+     * in somebody's collection. They are also separate lines in the meter,
+     * which is the only way "why did my allowance go" has an answer.
+     */
+    case Rewrite = 'rewrite';
+
     /** Which model config picked for this feature. */
     public function model(): string
     {

@@ -97,6 +97,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('ai/explain', [AiController::class, 'explain'])
         ->middleware('throttle:30,60')
         ->name('ai.explain');
+    // One card at a time and a real charge each, so the throttle matches
+    // `explain` rather than the batched grader's.
+    Route::post('ai/rewrite', [AiController::class, 'rewrite'])
+        ->middleware('throttle:30,60')
+        ->name('ai.rewrite');
 
     Route::put('onboarding', [OnboardingController::class, 'update'])
         ->middleware('throttle:20,1')

@@ -62,6 +62,10 @@ return [
         'grade' => env('ANTHROPIC_MODEL_GRADE', 'claude-haiku-4-5-20251001'),
         'generate' => env('ANTHROPIC_MODEL_GENERATE', 'claude-opus-5'),
         'brief' => env('ANTHROPIC_MODEL_BRIEF', 'claude-opus-5'),
+        // Rewriting somebody's card is the one place a weaker model's output
+        // would be pasted straight into a collection, so it gets the same model
+        // as generation rather than the grader's cheap one.
+        'rewrite' => env('ANTHROPIC_MODEL_REWRITE', 'claude-opus-5'),
     ],
 
     /**

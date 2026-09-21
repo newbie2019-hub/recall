@@ -9,6 +9,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { CardFrame } from './CardFrame'
+import { NoteCritic } from './NoteCritic'
 import { OcclusionEditor } from './OcclusionEditor'
 import { SimEditor } from './SimEditor'
 import { ChangeNoteType } from './ChangeNoteType'
@@ -562,6 +563,11 @@ export function NoteEditor({
           </datalist>
         </div>
       </div>
+
+      {/* Between the fields and the preview, which is where the question
+          belongs: after the card is written and before it is saved. It grades
+          nothing until it is asked to — see `NoteCritic`. */}
+      {nt && <NoteCritic fields={fields} noteType={nt.name} onApply={edit} />}
 
       <Separator className="my-6" />
 

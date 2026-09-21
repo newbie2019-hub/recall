@@ -1,6 +1,6 @@
 import type {
   ApiEnvelope, ApiErrorBody, ApiErrorCode, DeviceIdentity, DeviceSummary,
-  AiBriefing, AiCandidate, AiExplanation, AiJob, AiUsage, AiVerdict,
+  AiBriefing, AiCandidate, AiExplanation, AiJob, AiRewrite, AiUsage, AiVerdict,
   Session, SyncPayload, SyncPullResult, SyncPushResult,
 } from './types.ts'
 import type { OnboardingAnswers } from '../onboarding.ts'
@@ -233,6 +233,26 @@ export class ApiClient {
    */
   aiGrade(cards: { id: string; fields: Record<string, string> }[]): Promise<{ verdicts: AiVerdict[] }> {
     return this.request<{ verdicts: AiVerdict[] }>('ai/grade', { method: 'POST', body: { cards } })
+  }
+
+  /**
+   * The same card, asked better.
+   *
+   * The grader's missing half: {@link aiGrade} says what is wrong with a
+   * prompt and this says what to do about it, at the one moment that is worth
+   * most — while the card is still being written.
+   *
+   * `flaw` is the grader's own verdict when there is one. A rewrite aimed at a
+   * named problem beats a general polish, and the two are the same rubric.
+   *
+   * Never retried: a retry is a second real charge for the same question.
+   */
+  aiRewrite(input: {
+    fields: Record<string, string>
+    note_type?: string
+    flaw?: string
+  }): Promise<AiRewrite> {
+    return this.request<AiRewrite>('ai/rewrite', { method: 'POST', body: input })
   }
 
   /**

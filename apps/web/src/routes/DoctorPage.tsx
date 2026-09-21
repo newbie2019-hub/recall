@@ -12,6 +12,7 @@ import { collectionReady } from '@/db/boot'
 import * as doctor from '@/db/queries/doctor'
 import { useDecks } from '@/hooks/useDecks'
 import { useAuth } from '@/lib/auth'
+import { DIMENSION, TIER } from '@/lib/verdict'
 import { paths } from './paths'
 
 /**
@@ -223,23 +224,4 @@ export function DoctorPage() {
       </ul>
     </div>
   )
-}
-
-/**
- * Tier 1 is the one that matters and the one the colour is spent on: the card
- * that looks fine and is not. Tier 0 is rarer and self-evident once you read it.
- */
-const TIER: Record<number, { label: string; className: string }> = {
-  0: { label: 'broken', className: 'text-eosin' },
-  1: { label: 'weak', className: 'text-eosin' },
-  2: { label: 'fixable', className: 'text-muted-foreground' },
-}
-
-/** A fallback sentence when the model returned a dimension and no prose. */
-const DIMENSION: Record<string, string> = {
-  lacks_context: 'Ambiguous on its own — it could be asked of several things.',
-  multiple_answers: 'More than one answer is correct, so a right one can read as wrong.',
-  shallow: 'The question cues its own answer.',
-  wordy: 'Long enough that you will read it rather than recall it.',
-  too_narrow: 'A fragment with no standalone meaning.',
 }

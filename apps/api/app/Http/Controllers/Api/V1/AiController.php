@@ -10,6 +10,7 @@ use App\Services\Ai\BriefService;
 use App\Services\Ai\ExplainService;
 use App\Services\Ai\GradeService;
 use App\Services\Ai\Ledger;
+use App\Services\Ai\RewriteService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,6 +32,7 @@ class AiController extends Controller
         private readonly ExplainService $explain,
         private readonly GradeService $grader,
         private readonly BriefService $briefer,
+        private readonly RewriteService $rewriter,
     ) {}
 
     public function usage(Request $request): JsonResponse
@@ -86,7 +88,10 @@ class AiController extends Controller
         $data = $request->validate([
             'cards' => ['required', 'array', 'min:1', 'max:'.GradeService::BATCH],
             'cards.*.id' => ['required', 'string', 'max:64'],
-            'cards.*.fields' => ['required', 'array', 'min:1', 'max:8'],
+            // Twelve, matching `explain` and `rewrite`. Eight rejected every
+            // note type with nine fields — the whole batch, not the one card —
+            // which is a 422 on a sweep the person cannot do anything about.
+            'cards.*.fields' => ['required', 'array', 'min:1', 'max:12'],
             'cards.*.fields.*' => ['nullable', 'string', 'max:4000'],
         ]);
 
@@ -96,6 +101,34 @@ class AiController extends Controller
         ], $data['cards']);
 
         return $this->ok(['verdicts' => $this->grader->grade($request->user(), $cards)]);
+    }
+
+    /**
+     * The same card, asked better — as a suggestion.
+     *
+     * The grader says what is wrong and this says what to do about it, which
+     * is the half that was missing at the one moment it is worth most: while
+     * the card is still being written. It returns only the fields it would
+     * change and it changes nothing itself — the client puts each one beside
+     * its field and the person takes it or does not.
+     */
+    public function rewrite(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'fields' => ['required', 'array', 'min:1', 'max:12'],
+            'fields.*' => ['nullable', 'string', 'max:4000'],
+            'note_type' => ['nullable', 'string', 'max:120'],
+            // The grader's verdict, when the client has one. Optional because
+            // a card can be rewritten without having been graded first.
+            'flaw' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        return $this->ok($this->rewriter->rewrite(
+            $request->user(),
+            array_map(fn ($v): string => (string) $v, $data['fields']),
+            (string) ($data['note_type'] ?? ''),
+            (string) ($data['flaw'] ?? ''),
+        ));
     }
 
     /**
