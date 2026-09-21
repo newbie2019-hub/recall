@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Flag, PauseCircle } from 'lucide-react'
+import { ArrowDown, ArrowUp, Flag, Info, PauseCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { BrowseCard, SortKey } from '@/db/queries/browse'
@@ -24,7 +24,7 @@ function dueLabel(c: BrowseCard, now: number): string {
 }
 
 export function CardTable({
-  rows, selected, sort, onSort, onToggle, onTogglePage, onOpen,
+  rows, selected, sort, onSort, onToggle, onTogglePage, onOpen, onInfo,
 }: {
   rows: BrowseCard[] | null
   selected: ReadonlySet<string>
@@ -33,6 +33,7 @@ export function CardTable({
   onToggle: (id: string, on: boolean) => void
   onTogglePage: (on: boolean) => void
   onOpen: (noteId: string) => void
+  onInfo: (cardId: string) => void
 }) {
   if (!rows) {
     return (
@@ -72,6 +73,7 @@ export function CardTable({
             </th>
           ))}
           <th className="w-40 py-2 text-left"><Head label="Tags" /></th>
+          <th className="w-8 py-2"><span className="sr-only">Card info</span></th>
         </tr>
       </thead>
       <tbody>
@@ -126,6 +128,18 @@ export function CardTable({
             <td className="py-1.5 text-right font-mono text-[0.6875rem] text-muted-foreground">{r.reps}</td>
             <td className="truncate py-1.5 font-mono text-[0.625rem] text-muted-foreground">
               {r.tags.join(' ')}
+            </td>
+            {/* The row's title opens the note, so history needs its own target:
+                editing the words and asking why the card keeps failing are
+                different jobs and the second one must not risk the first. */}
+            <td className="py-1.5 text-center">
+              <button
+                onClick={() => onInfo(r.id)}
+                className="text-muted-foreground hover:text-hematoxylin"
+                aria-label={`History of ${r.preview || 'this card'}`}
+              >
+                <Info className="size-3.5" />
+              </button>
             </td>
           </tr>
         ))}

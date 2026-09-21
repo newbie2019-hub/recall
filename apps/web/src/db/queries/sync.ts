@@ -1,5 +1,6 @@
 import { newCard, replayReviews, type Review, type SyncResourceName } from '@recall/core'
 import { db } from '../client'
+import { replayCards } from './replay'
 import { saveNote } from '../repo'
 
 /**
@@ -345,51 +346,6 @@ export async function putReviews(rows: ReviewLocal[]): Promise<void> {
   await replayCards([...new Set(rows.map((r) => r.card_id))])
 }
 
-const UPDATE_CARD = `UPDATE cards SET due=?, stability=?, difficulty=?, state=?,
-  learning_steps=?, reps=?, lapses=?, last_review=? WHERE id=?`
-
-/**
- * Rebuild the derived cache for cards whose history just changed.
- *
- * A card with no row here is skipped rather than created: the note that
- * generates it has not been pulled yet, and `saveNote` replays the log into it
- * the moment it arrives.
- */
-async function replayCards(cardIds: string[]): Promise<void> {
-  for (const ids of chunked(cardIds)) {
-    const meta = await db.select<{
-      id: string; note_id: string; ord: number; retention_target: number
-      created_at: number; due_override: number | null; forgotten_at: number | null
-    }>(
-      `SELECT c.id, c.note_id, c.ord, c.created_at, c.due_override, c.forgotten_at,
-              d.retention_target
-         FROM cards c
-         JOIN notes n ON n.id = c.note_id
-         JOIN decks d ON d.id = COALESCE(c.deck_id, n.deck_id)
-        WHERE c.id IN (${holes(ids.length)})`, ids,
-    )
-    if (!meta.length) continue
-    const log = await db.select<Review>(
-      `SELECT * FROM reviews WHERE card_id IN (${holes(ids.length)}) ORDER BY ts`, ids,
-    )
-    await db.batch(meta.map((m) => {
-      const own = log.filter((r) => r.card_id === m.id)
-      // The overrides are read from the row rather than passed in, because the
-      // reviews and the override can arrive in either order — a forget pulled
-      // before the answers it forgets still has to win.
-      const card = replayReviews(
-        { id: m.id, note_id: m.note_id, ord: m.ord },
-        own, m.retention_target, m.created_at || own[0]?.ts || Date.now(),
-        { due_override: m.due_override, forgotten_at: m.forgotten_at },
-      )
-      return {
-        sql: UPDATE_CARD,
-        params: [card.due, card.stability, card.difficulty, card.state,
-                 card.learning_steps, card.reps, card.lapses, card.last_review, card.id],
-      }
-    }))
-  }
-}
 
 /**
  * A pulled `deleted: true`.

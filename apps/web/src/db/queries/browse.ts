@@ -7,7 +7,10 @@
  * list right now", which is a page of a hundred out of forty thousand.
  */
 import { db } from '../client.ts'
+import { replayCards } from './replay.ts'
 import { DECK_OF, clozeText, searchSql, stripHtml, type Term } from '@recall/core'
+
+const DAY = 86_400_000
 
 export interface BrowseCard {
   id: string
@@ -36,7 +39,7 @@ export const SORTS = {
   reps: 'c.reps',
   flag: 'c.flag',
   deck: 'd.name',
-  created: 'n.updated_at',
+  created: 'n.created_at',
   card: 'c.ord',
 } as const
 export type SortKey = keyof typeof SORTS
@@ -298,6 +301,35 @@ export const bulkMove = (t: Target, deckId: string, now = Date.now()): Promise<U
 /** Reschedule never touches a new card — see `bulkReschedule`. */
 export const RESCHEDULABLE = `c.state != 'new'`
 
+type CardSchedule = {
+  id: string; due: number; state: string; due_override: number | null
+  forgotten_at: number | null; state_updated_at: number
+}
+const SCHEDULE_COLS = ['due', 'due_override', 'forgotten_at', 'state_updated_at']
+const SCHEDULE_SELECT =
+  'c.id, c.due, c.state, c.due_override, c.forgotten_at, c.state_updated_at'
+
+/**
+ * Write the override *and* the cache it implies, in one pass.
+ *
+ * `due` is written here rather than left to a replay, and that is deliberate.
+ * A due date only ever changes `due`, so folding the whole log to discover that
+ * would be expensive and — worse — destructive: a card whose local log is
+ * incomplete (an import with no revlog, a device mid-first-sync) would come
+ * back from the fold as new. `replayReviews` still applies the override, which
+ * is what keeps the two in agreement the next time something does rebuild.
+ *
+ * Forgetting is the exception and gets `replayCards`, because resetting the
+ * card *is* the operation — see `bulkForget`.
+ */
+const overrideMany = (
+  t: Target,
+  next: (row: CardSchedule) => CardSchedule | null,
+  label: string,
+): Promise<Undo> =>
+  apply<CardSchedule>('cards', SCHEDULE_COLS, SCHEDULE_SELECT,
+    targetWhere(t, RESCHEDULABLE), next, label)
+
 /**
  * Set a card's next due date, `days` from now.
  *
@@ -322,10 +354,52 @@ export const RESCHEDULABLE = `c.state != 'new'`
  * while the confirmation said it had. The dialog counts with the same clause.
  */
 export const bulkReschedule = (t: Target, days: number, now = Date.now()): Promise<Undo> =>
-  apply<{ id: string; due: number }>('cards', ['due'], 'c.id, c.due',
-    targetWhere(t, RESCHEDULABLE),
-    (r) => ({ ...r, due: now + days * 86_400_000 }),
+  overrideMany(t,
+    (r) => ({ ...r, due: now + days * DAY, due_override: now + days * DAY, state_updated_at: now }),
     'Rescheduled')
+
+/**
+ * Push a card's existing date further out, or pull it in — relative, not absolute.
+ *
+ * This is the one scheduling operation Anki core still does not have (its users
+ * install FSRS Helper for it), and the reason it is worth having is that a
+ * backlog is not fixed by giving four thousand cards the *same* new date. Each
+ * card keeps its own position in the queue and the whole queue slides.
+ *
+ * Advancing is clamped to today: a date in the past would put the card at the
+ * front of the queue in an order nobody chose.
+ */
+export const bulkShift = (t: Target, days: number, now = Date.now()): Promise<Undo> =>
+  overrideMany(t,
+    (r) => {
+      const due = Math.max(now, r.due + days * DAY)
+      return { ...r, due, due_override: due, state_updated_at: now }
+    },
+    days >= 0 ? 'Postponed' : 'Advanced')
+
+/**
+ * Forget: back to new, keeping every answer in the log.
+ *
+ * See `repo.forget` for why this cannot delete history and does not need to.
+ * New cards are skipped because there is nothing to forget, and saying so in
+ * the count is better than reporting work that did not happen.
+ */
+export async function bulkForget(t: Target, now = Date.now()): Promise<Undo> {
+  const ids = (await db.select<{ id: string }>(
+    `SELECT DISTINCT c.id ${FROM} WHERE ${targetWhere(t, RESCHEDULABLE).sql}`,
+    targetWhere(t, RESCHEDULABLE).params,
+  )).map((r) => r.id)
+
+  const undo = await overrideMany(t,
+    (r) => ({ ...r, forgotten_at: now, due_override: null, state_updated_at: now }),
+    'Forgotten')
+
+  // Unlike a date, a forget changes state, reps and lapses, so the cache really
+  // does have to be refolded — and the undo has to refold it back, or half the
+  // selection stays new after the toast says it did not.
+  await replayCards(ids)
+  return { ...undo, run: () => undo.run().then(() => replayCards(ids)) }
+}
 
 /**
  * Add or remove one tag across the selection.

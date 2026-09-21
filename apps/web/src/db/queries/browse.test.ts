@@ -34,6 +34,10 @@ before(() => {
   db.run = async (sql: string, params: unknown[] = []) => {
     sqlite.prepare(sql).run(...bind(params))
   }
+  // `bulkForget` refolds the log through `replayCards`, which batches.
+  db.batch = async (stmts: { sql: string; params?: unknown[] }[]) => {
+    for (const st of stmts) sqlite.prepare(st.sql).run(...bind(st.params ?? []))
+  }
 })
 
 /** A small collection: two decks, one nested, three notes, six cards. */
@@ -155,7 +159,7 @@ test('bulk flag and move write card_states and are undoable', async () => {
   assert.equal(await browse.browseCount(q('flag:3')), 0)
 })
 
-test('reschedule writes cards.due, skips new cards, and appends no review', async () => {
+test('reschedule writes the override as well as the cache, so it can travel', async () => {
   const target = { terms: q('deck:Anatomy') }
   assert.equal(await browse.targetCount(target), 4)
   // The dialog's number and the operation's number are the same query.
@@ -174,9 +178,73 @@ test('reschedule writes cards.due, skips new cards, and appends no review', asyn
   const [n] = await db.select<{ n: number }>('SELECT COUNT(*) AS n FROM reviews')
   assert.equal(n!.n, 0)
 
+  // The regression this line exists for: `due` alone is a cache that every
+  // other device rebuilds from the log, so a date written only there is
+  // invisible on the phone. The override is the copy that syncs.
+  const [carried] = await db.select<{ due_override: number | null; state_updated_at: number }>(
+    `SELECT due_override, state_updated_at FROM cards WHERE id = 'n1:1'`,
+  )
+  assert.equal(carried!.due_override, NOW + 7 * DAY)
+  assert.equal(carried!.state_updated_at, NOW, 'without the stamp the push loop never finds it')
+
   await undo.run()
-  const [back] = await db.select<{ due: number }>(`SELECT due FROM cards WHERE id = 'n1:1'`)
+  const [back] = await db.select<{ due: number; due_override: number | null }>(
+    `SELECT due, due_override FROM cards WHERE id = 'n1:1'`,
+  )
   assert.equal(back!.due, NOW + 30 * DAY)
+  assert.equal(back!.due_override, null, 'undo has to clear the override, not just the cache')
+})
+
+test('postpone slides each card from its own date; reschedule flattens them', async () => {
+  // The distinction the two dialogs exist to keep: a backlog is not fixed by
+  // giving four thousand cards the same day.
+  const target = { terms: q('deck:Anatomy') }
+  await browse.bulkShift(target, 7, NOW)
+
+  const rows = await db.select<{ id: string; due: number }>(
+    `SELECT id, due FROM cards WHERE id IN ('n1:0','n1:1','n2:0') ORDER BY id`,
+  )
+  assert.equal(rows[0]!.due, NOW - DAY + 7 * DAY)
+  assert.equal(rows[1]!.due, NOW + 30 * DAY + 7 * DAY)
+  assert.equal(rows[2]!.due, NOW - 2 * DAY + 7 * DAY)
+})
+
+test('advancing never pulls a card earlier than today', async () => {
+  // A date in the past would put the card at the head of the queue in an order
+  // nobody chose, which is worse than the backlog it was meant to relieve.
+  await browse.bulkShift({ ids: ['n1:1'] }, -365, NOW)
+  const [r] = await db.select<{ due: number }>(`SELECT due FROM cards WHERE id = 'n1:1'`)
+  assert.equal(r!.due, NOW)
+})
+
+test('forget resets the card and keeps every answer in the log', async () => {
+  sqlite.exec(`
+    INSERT INTO reviews (id, card_id, ts, rating, duration_ms) VALUES
+      ('rv1', 'n1:0', ${NOW - 20 * DAY}, 3, 1000),
+      ('rv2', 'n1:0', ${NOW - 10 * DAY}, 3, 1000);
+  `)
+
+  const undo = await browse.bulkForget({ ids: ['n1:0'] }, NOW)
+  assert.equal(undo.count, 1)
+
+  const [card] = await db.select<{ state: string; reps: number; forgotten_at: number | null }>(
+    `SELECT state, reps, forgotten_at FROM cards WHERE id = 'n1:0'`,
+  )
+  assert.equal(card!.state, 'new')
+  assert.equal(card!.reps, 0)
+  assert.equal(card!.forgotten_at, NOW)
+
+  const [n] = await db.select<{ n: number }>(`SELECT COUNT(*) AS n FROM reviews WHERE card_id = 'n1:0'`)
+  assert.equal(n!.n, 2, 'the log is append-only; forgetting is not deleting')
+
+  // And it is reversible, which is only true because nothing was thrown away.
+  await undo.run()
+  const [back] = await db.select<{ state: string; reps: number; forgotten_at: number | null }>(
+    `SELECT state, reps, forgotten_at FROM cards WHERE id = 'n1:0'`,
+  )
+  assert.equal(back!.forgotten_at, null)
+  assert.equal(back!.state, 'review')
+  assert.equal(back!.reps, 2)
 })
 
 test('retag reaches every card of a selected note, and is idempotent', async () => {

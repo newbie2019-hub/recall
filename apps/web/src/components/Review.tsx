@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MoreHorizontal, Undo2 } from 'lucide-react'
+import { Info, MoreHorizontal, RotateCcw, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,12 +21,14 @@ import * as repo from '@/db/repo'
 import { stopwatch, type Stopwatch } from '@/lib/stopwatch'
 import { WhyWrong } from '@/components/WhyWrong'
 import { SimCard } from '@/components/SimCard'
+import { CardInfoDialog } from '@/components/CardInfoDialog'
 import { answerCard } from '@/db/queries/filtered'
 import { paintCard, type PaintedCard } from '@/lib/render'
 import { previewIntervals, type RatingValue } from '@recall/core'
 
 export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () => void }) {
   const [sc, setSc] = useState<repo.StudyCard | null>(null)
+  const [infoFor, setInfoFor] = useState<string | null>(null)
   const [painted, setPainted] = useState<PaintedCard | null>(null)
   const [counts, setCounts] = useState({ due: 0, new: 0, done: 0 })
   const [revealed, setRevealed] = useState(false)
@@ -189,6 +191,22 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
               {sc.card.flag ? 'Clear flag' : 'Flag'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            {/* Forget is here rather than beside Bury because it is the only
+                one of these that changes what the card *is* rather than when
+                it is next shown. It keeps every answer in the log — see
+                `repo.forget` — so the history on the info screen survives it. */}
+            <DropdownMenuItem
+              onClick={() => repo.forget(sc.card.id).then(() => {
+                toast('Card forgotten — back in the new queue')
+                return load()
+              })}
+            >
+              <RotateCcw /> Forget this card
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setInfoFor(sc.card.id)}>
+              <Info /> Card info
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={undo}>
               <Undo2 /> Undo last review
             </DropdownMenuItem>
@@ -196,6 +214,8 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
+
+      <CardInfoDialog cardId={infoFor} onClose={() => setInfoFor(null)} />
 
       <main className="flex flex-1 items-center py-6">
         <SpecimenTag

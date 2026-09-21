@@ -20,7 +20,19 @@ import type * as LocalStore from '../db/queries/sync'
  */
 
 export type Transport = Pick<ApiClient, 'push' | 'pull'>
-export type Store = typeof LocalStore
+
+/**
+ * A `Pick`, like `Transport`, and for the same reason: this is the loop's
+ * contract, not the module's table of contents. As the whole module it broke
+ * the test double every time `db/queries/sync.ts` grew a helper that the loop
+ * does not call.
+ */
+export type Store = Pick<
+  typeof LocalStore,
+  | 'readState' | 'writeCursor' | 'adoptInto' | 'collectLocal' | 'markPushed'
+  | 'putDecks' | 'putNoteTypes' | 'putNotes' | 'putCardStates' | 'putReviews'
+  | 'remove'
+>
 
 /** Below the server's own MAX_ROWS, so one push is never a 413. */
 const PUSH_CHUNK = 400

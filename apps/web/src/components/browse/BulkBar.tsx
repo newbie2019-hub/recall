@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Flag, FolderInput, PauseCircle, PlayCircle, Tag, Timer } from 'lucide-react'
+import {
+  ChevronsRight, Flag, FolderInput, PauseCircle, PlayCircle, RotateCcw, Tag, Timer,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -13,7 +15,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  RESCHEDULABLE, bulkFlag, bulkMove, bulkReschedule, bulkRetag, bulkSuspend, targetCount,
+  RESCHEDULABLE, bulkFlag, bulkForget, bulkMove, bulkReschedule, bulkRetag, bulkShift,
+  bulkSuspend, targetCount,
   type Target, type Undo,
 } from '@/db/queries/browse'
 import type { DeckRow } from '@/db/repo'
@@ -30,6 +33,7 @@ const CONFIRM_AT = 50
 
 type Pending =
   | { kind: 'reschedule' }
+  | { kind: 'shift' }
   | { kind: 'move' }
   | { kind: 'tag'; add: boolean }
   | { kind: 'confirm'; title: string; body: string; op: () => Promise<Undo> }
@@ -110,6 +114,16 @@ export function BulkBar({
         <Button variant="outline" size="xs" disabled={busy} onClick={() => setPending({ kind: 'reschedule' })}>
           <Timer /> Reschedule
         </Button>
+        <Button variant="outline" size="xs" disabled={busy} onClick={() => setPending({ kind: 'shift' })}>
+          <ChevronsRight /> Postpone
+        </Button>
+        <Button variant="outline" size="xs" disabled={busy}
+                onClick={() => go('Forget cards',
+                  `Put ${cards} back in the new queue? Their answers stay in the log — `
+                  + 'your retention numbers do not change, only their scheduling does.',
+                  () => bulkForget(target))}>
+          <RotateCcw /> Forget
+        </Button>
         <Button variant="outline" size="xs" disabled={busy} onClick={() => setPending({ kind: 'tag', add: true })}>
           <Tag /> Tag
         </Button>
@@ -141,6 +155,7 @@ function BulkDialog({
   onRun: (op: () => Promise<Undo>) => void
 }) {
   const [days, setDays] = useState('1')
+  const [shift, setShift] = useState('7')
   const [tag, setTag] = useState('')
   const [deckId, setDeckId] = useState('')
   /**
@@ -151,7 +166,7 @@ function BulkDialog({
   const [reschedulable, setReschedulable] = useState<number | null>(null)
 
   useEffect(() => {
-    if (pending?.kind !== 'reschedule') return setReschedulable(null)
+    if (pending?.kind !== 'reschedule' && pending?.kind !== 'shift') return setReschedulable(null)
     let live = true
     void targetCount(target, RESCHEDULABLE).then((n) => live && setReschedulable(n))
     return () => { live = false }
@@ -202,6 +217,37 @@ function BulkDialog({
               <Button disabled={!Number.isFinite(Number(days)) || !days.trim() || !reschedulable}
                       onClick={() => onRun(() => bulkReschedule(target, Number(days)))}>
                 Reschedule
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {pending.kind === 'shift' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Postpone or advance</DialogTitle>
+              <DialogDescription>
+                Slides each card from its <em>own</em> due date, so the queue keeps its
+                order. Reschedule gives every card the same date; this does not, which is
+                what you want for a backlog. Negative days pull cards forward, never
+                earlier than today.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-shift">Days</Label>
+              <Input id="bulk-shift" type="number" min={-36500} max={36500} className="w-28 font-mono"
+                     value={shift} onChange={(e) => setShift(e.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                {reschedulable === null
+                  ? 'Counting…'
+                  : `${reschedulable} of ${count} — new cards have no due date and are left alone.`}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button disabled={!Number.isFinite(Number(shift)) || !shift.trim() || !reschedulable}
+                      onClick={() => onRun(() => bulkShift(target, Number(shift)))}>
+                {Number(shift) < 0 ? 'Advance' : 'Postpone'}
               </Button>
             </DialogFooter>
           </>

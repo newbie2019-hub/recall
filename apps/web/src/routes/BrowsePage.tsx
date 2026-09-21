@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { formatSearch, parseSearch, setFacet } from '@recall/core'
 import { BulkBar } from '@/components/browse/BulkBar'
 import { CardTable } from '@/components/browse/CardTable'
+import { CardInfoDialog } from '@/components/CardInfoDialog'
 import { TagSidebar } from '@/components/browse/TagSidebar'
 import { FilterBar } from '@/components/browse/FilterBar'
 import { Button } from '@/components/ui/button'
@@ -53,6 +54,7 @@ export function BrowsePage() {
    * cards.
    */
   const [sel, setSel] = useState<ReadonlySet<string>>(new Set())
+  const [infoFor, setInfoFor] = useState<string | null>(null)
   const [allMatching, setAllMatching] = useState(false)
 
   const terms = useMemo(() => parseSearch(search), [search])
@@ -196,7 +198,10 @@ export function BrowsePage() {
               tick(on ? ids : [], on ? [] : ids)
             }}
             onOpen={(noteId) => navigate(paths.note(noteId))}
+            onInfo={setInfoFor}
           />
+
+          <CardInfoDialog cardId={infoFor} onClose={() => setInfoFor(null)} />
 
           {pages > 1 && (
             <div className="flex items-center justify-center gap-3 py-4">
