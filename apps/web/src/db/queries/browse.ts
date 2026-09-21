@@ -222,6 +222,13 @@ export interface Undo {
   /** Retag writes notes, everything else writes cards — say which was meant. */
   noun: 'card' | 'note'
   run: () => Promise<void>
+  /**
+   * `false` when the operation genuinely cannot be taken back, which is only
+   * ever delete. The toast reads this and offers no button, because an Undo
+   * that does nothing is worse than none: it is a promise, and somebody will
+   * rely on it exactly once.
+   */
+  undoable?: boolean
 }
 
 /**
@@ -418,3 +425,135 @@ export const bulkRetag = (t: Target, tag: string, add: boolean, now = Date.now()
       return { ...r, tags: next.sort().join(' '), updated_at: now }
     },
     add ? `Tagged ${tag}` : `Untagged ${tag}`)
+
+
+// ── find and replace, and delete ──────────────────────────────────────────
+
+export interface ReplaceSpec {
+  find: string
+  replace: string
+  /** One field, or every field when null. */
+  field: string | null
+  regex: boolean
+  matchCase: boolean
+}
+
+/**
+ * Find and replace across the fields of the selected notes.
+ *
+ * Anki has had this forever and it is how a 20,000-card import gets fixed: a
+ * stray `<br>`, a wrong abbreviation, a tag that should have been a word. It
+ * writes notes rather than cards, so like retag it reaches every card of a
+ * note that had one card selected — which is the only coherent behaviour,
+ * since a field cannot be half-replaced.
+ *
+ * It runs through `apply`, so it is undoable in one click, and that is what
+ * makes it safe to offer at all on an operation this blunt.
+ */
+export function bulkReplace(t: Target, spec: ReplaceSpec, now = Date.now()): Promise<Undo> {
+  const pattern = compileReplace(spec)
+
+  return apply<{ id: string; fields: string; checksum: number | null; updated_at: number }>(
+    'notes', ['fields', 'updated_at'], 'n.id, n.fields, n.checksum, n.updated_at',
+    targetWhere(t),
+    (r) => {
+      let parsed: Record<string, string>
+      try {
+        parsed = JSON.parse(r.fields) as Record<string, string>
+      } catch {
+        // A note whose fields will not parse is already broken; rewriting it
+        // from a regex would turn a readable problem into an unreadable one.
+        return null
+      }
+
+      let changed = false
+      const next: Record<string, string> = {}
+      for (const [name, value] of Object.entries(parsed)) {
+        if (spec.field !== null && name !== spec.field) {
+          next[name] = value
+          continue
+        }
+        const after = value.replace(pattern, spec.replace)
+        if (after !== value) changed = true
+        next[name] = after
+      }
+
+      return changed ? { ...r, fields: JSON.stringify(next), updated_at: now } : null
+    },
+    'Replaced in',
+  )
+}
+
+/**
+ * The pattern, whether it was typed as one or not.
+ *
+ * A literal search is escaped rather than run, so `$1` in the replacement of a
+ * non-regex search is still `$1` — and `.` matches a full stop. Always global:
+ * replacing the first `<br>` in a field and leaving the other four is not what
+ * anybody means.
+ */
+function compileReplace(spec: ReplaceSpec): RegExp {
+  const body = spec.regex ? spec.find : spec.find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(body, spec.matchCase ? 'g' : 'gi')
+}
+
+/** How many notes a replace would touch, for the dialog to say before it runs. */
+export async function replaceCount(t: Target, spec: ReplaceSpec): Promise<number> {
+  const pattern = compileReplace(spec)
+  const rows = await db.select<{ fields: string }>(
+    `SELECT DISTINCT n.id, n.fields ${FROM} WHERE ${targetWhere(t).sql}`, targetWhere(t).params,
+  )
+  return rows.filter((r) => {
+    try {
+      const parsed = JSON.parse(r.fields) as Record<string, string>
+      return Object.entries(parsed).some(([name, value]) =>
+        (spec.field === null || name === spec.field) && pattern.test(value))
+    } catch {
+      return false
+    } finally {
+      // `g` regexes carry `lastIndex` between calls, so a shared one skips
+      // every other row. Resetting is cheaper than compiling per row.
+      pattern.lastIndex = 0
+    }
+  }).length
+}
+
+/**
+ * Delete the selected notes, and every card and tombstone that implies.
+ *
+ * **Not undoable, and it says so** — see `Undo.undoable`. The review log is
+ * left alone: it is append-only, the rows are orphaned rather than wrong, and
+ * a note that comes back by the same guid from an import finds its history
+ * again. That is the same reasoning as `repo.deleteNote`, which this is the
+ * bulk form of.
+ */
+export async function bulkDelete(t: Target, now = Date.now()): Promise<Undo> {
+  const w = targetWhere(t)
+  const notes = (await db.select<{ id: string }>(
+    `SELECT DISTINCT n.id ${FROM} WHERE ${w.sql}`, w.params,
+  )).map((r) => r.id)
+  if (!notes.length) return { label: 'Deleted', count: 0, noun: 'note', run: async () => {}, undoable: false }
+
+  const ids = holes(notes.length)
+  await db.batch([
+    // Tombstones first: they read the rows that are about to go.
+    {
+      sql: `INSERT INTO tombstones (resource, key, deleted_at, synced)
+            SELECT 'card_states', id, ?, 0 FROM cards WHERE note_id IN (${ids})
+            ON CONFLICT(resource, key) DO UPDATE SET deleted_at = excluded.deleted_at, synced = 0`,
+      params: [now, ...notes],
+    },
+    {
+      sql: `INSERT INTO tombstones (resource, key, deleted_at, synced)
+            SELECT 'notes', id, ?, 0 FROM notes WHERE id IN (${ids})
+            ON CONFLICT(resource, key) DO UPDATE SET deleted_at = excluded.deleted_at, synced = 0`,
+      params: [now, ...notes],
+    },
+    { sql: `DELETE FROM cards WHERE note_id IN (${ids})`, params: notes },
+    { sql: `DELETE FROM notes WHERE id IN (${ids})`, params: notes },
+  ])
+
+  return { label: 'Deleted', count: notes.length, noun: 'note', run: async () => {}, undoable: false }
+}
+
+const holes = (n: number) => Array.from({ length: n }, () => '?').join(',')

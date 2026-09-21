@@ -120,11 +120,36 @@ function filter(name: string, v: string, field: string, ctx: Ctx): string {
     case 'occlusion':
       return occlusionHtml(v, ctx.fields.Image ?? '', ctx.ord, ctx.side)
     default:
+      // `{{tts en_US:Front}}` — Anki puts the language in the name, not after a
+      // second colon, so the whole thing arrives here as one filter.
+      if (name === 'tts' || name.startsWith('tts ')) return ttsHtml(name, v)
       // furigana:/kana:/kanji: and any custom filter from an imported deck.
       // Passing the raw value through beats rendering "unknown filter" over
       // somebody's collection.
       return v
   }
+}
+
+/**
+ * `{{tts}}`: a marker the parent speaks, not audio the frame plays.
+ *
+ * Anki bakes this into a media file or hands it to the OS. We have neither
+ * option: the frame runs no JavaScript (README rule 5), so it cannot call
+ * `speechSynthesis`, and there is no server round trip to make a file from.
+ * So the filter emits the text with its language attached, `TtsSpeaker` reads
+ * it back out of the painted HTML, and the browser's own voice says it — the
+ * same division of labour as the type-in box and `[sound:]` autoplay.
+ *
+ * The text stays visible. Anki hides it, because there it is genuinely an audio
+ * card; here a hidden element that only speaks when a voice is installed would
+ * be a field that silently vanishes on the machines without one.
+ */
+function ttsHtml(name: string, v: string): string {
+  if (isEmpty(v)) return ''
+  const lang = name.slice(3).trim().split(/[\s_]/).filter(Boolean).join('-')
+  const text = stripHtml(v)
+  return `<span class="tts" data-tts="${escapeHtml(text)}"`
+    + `${lang ? ` data-tts-lang="${escapeHtml(lang)}"` : ''}>${v}</span>`
 }
 
 function typedSlot(node: Extract<Node, { t: 'var' }>, ctx: Ctx): string {

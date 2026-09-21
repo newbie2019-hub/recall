@@ -50,6 +50,8 @@ export function Browse({
     newPerDay: String(deck.new_per_day),
     bury: deck.bury_new !== 0,
     maxAnswer: String(deck.max_answer_seconds ?? 60),
+    autoReveal: String(deck.auto_reveal_seconds ?? 0),
+    autoNext: String(deck.auto_next_seconds ?? 0),
   })
 
   /**
@@ -61,12 +63,17 @@ export function Browse({
     const next = { ...options, ...patch }
     setOptions(next)
     const perDay = Number(next.newPerDay)
-    const maxAnswer = Number(next.maxAnswer)
+    const num = (raw: string, fallback: number) =>
+      (raw.trim() && Number.isFinite(Number(raw)) ? Number(raw) : fallback)
     if (next.newPerDay.trim() && Number.isFinite(perDay))
-      void repo.setDeckOptions(
-        deck.id, Number(next.retention), perDay, next.bury,
-        next.maxAnswer.trim() && Number.isFinite(maxAnswer) ? maxAnswer : 60,
-      )
+      void repo.setDeckOptions(deck.id, {
+        retention: Number(next.retention),
+        newPerDay: perDay,
+        burySiblings: next.bury,
+        maxAnswerSeconds: num(next.maxAnswer, 60),
+        autoRevealSeconds: num(next.autoReveal, 0),
+        autoNextSeconds: num(next.autoNext, 0),
+      })
   }
 
   const load = useCallback(async () => setNotes(await repo.notesInDeck(deck.id)), [deck.id])
@@ -159,12 +166,29 @@ export function Browse({
             <span className="text-xs text-muted-foreground">seconds</span>
           </div>
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="auto-reveal" className={LABEL}>Auto-advance</Label>
+          <div className="flex h-8 items-center gap-1.5">
+            <Input id="auto-reveal" type="number" min={0} max={600}
+                   className="h-8 w-16 font-mono text-xs"
+                   value={options.autoReveal}
+                   onChange={(e) => saveOptions({ autoReveal: e.target.value })} />
+            <span className="text-xs text-muted-foreground">s to answer,</span>
+            <Input id="auto-next" type="number" min={0} max={600}
+                   className="h-8 w-16 font-mono text-xs"
+                   value={options.autoNext}
+                   onChange={(e) => saveOptions({ autoNext: e.target.value })} />
+            <span className="text-xs text-muted-foreground">s to next</span>
+          </div>
+        </div>
         <p className="max-w-xs text-xs text-muted-foreground">
           Applies to {deck.name} itself. Changing retention affects the next review of
           each card, never one already logged. Burying hides a note's other cards once
           you answer one, so you do not grade a reverse you were just shown. The
           longest answer is a ceiling on what gets *recorded*, so a card you walked
-          away from cannot claim an hour of study.
+          away from cannot claim an hour of study. Auto-advance is off at zero; it
+          reveals and moves on without ever grading for you, so a card it skips past
+          simply comes round again.
         </p>
       </div>
 

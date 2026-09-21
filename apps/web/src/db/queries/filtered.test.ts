@@ -101,6 +101,8 @@ const studyCard = (): StudyCard => {
     noteType: { id: 'basic', name: 'Basic', fields: [], templates: [], css: '', kind: 'standard' } as never,
     deckPath: 'Exam',
     maxAnswerSeconds: 60,
+  autoRevealSeconds: 0,
+  autoNextSeconds: 0,
     deckName: 'Exam',
     // What nextCard would hand over: the *filtered* deck's target, not home's.
     retentionTarget: 0.9,

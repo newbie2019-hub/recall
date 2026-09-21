@@ -16,6 +16,7 @@ import { RatingBar } from './RatingBar'
 import { CardFrame } from './CardFrame'
 import { Pomodoro } from './Pomodoro'
 import { AudioAutoplay } from './AudioAutoplay'
+import { TtsSpeaker } from './TtsSpeaker'
 import { RATING_SFX, sfx } from '@/lib/sfx'
 import * as repo from '@/db/repo'
 import { stopwatch, type Stopwatch } from '@/lib/stopwatch'
@@ -121,8 +122,42 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
     }
   }, [load])
 
+  /**
+   * Auto-advance: show the answer after N seconds, then move on after M.
+   *
+   * Off by default and off unless the deck says otherwise, which is Anki's
+   * behaviour and the right one — a card that answers itself while you are
+   * still reading it is worse than no timer at all.
+   *
+   * **It never grades.** Anki's version can answer Again for you; ours reveals
+   * and then advances *without* recording anything, because the review log is
+   * the source of truth for every number in the app (README rule 1) and a
+   * rating nobody gave is a lie in it that replay will faithfully reproduce
+   * forever. The card stays exactly where it was, to be answered later.
+   *
+   * Any keypress or click cancels it, via `interacted`.
+   */
+  const [interacted, setInteracted] = useState(false)
+  useEffect(() => setInteracted(false), [sc?.card.id, revealed])
+
+  useEffect(() => {
+    if (!sc || interacted) return
+    const seconds = revealed ? sc.autoNextSeconds : sc.autoRevealSeconds
+    if (!seconds) return
+
+    const t = setTimeout(() => {
+      if (!revealed) return void reveal()
+      // Revealed and the second timer fired: skip to the next card without
+      // answering this one. `nextCard` orders by due date, so a card nobody
+      // answered simply comes round again.
+      void load()
+    }, seconds * 1000)
+    return () => clearTimeout(t)
+  }, [sc, revealed, interacted, reveal, load])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      setInteracted(true)
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const typing = e.target instanceof HTMLInputElement
       if (e.key === 'Enter' && !revealed) {
@@ -137,8 +172,13 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
       }
       if (revealed && e.key >= '1' && e.key <= '4') void rate(Number(e.key) as RatingValue)
     }
+    const onPoint = () => setInteracted(true)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onPoint)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onPoint)
+    }
   }, [revealed, rate, undo, reveal])
 
   if (loading) return <div className="p-10 text-sm text-muted-foreground">Opening collection…</div>
@@ -173,6 +213,7 @@ export function Review({ deckId, onExit }: { deckId?: string | null; onExit: () 
           {counts.done}/{total}
         </span>
         <AudioAutoplay html={revealed ? painted.back : painted.front} deckId={deckId ?? null} />
+        <TtsSpeaker html={revealed ? painted.back : painted.front} deckId={deckId ?? null} />
         <Pomodoro deckId={deckId ?? null} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

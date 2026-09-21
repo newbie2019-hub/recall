@@ -118,7 +118,9 @@ export function BrowsePage() {
         if (!undo.count) return void toast('Nothing to change.')
         toast.success(`${undo.label} ${undo.count} ${undo.noun}${undo.count === 1 ? '' : 's'}`, {
           duration: 12_000,
-          action: {
+          // Delete offers no button. An Undo that does nothing is a promise
+          // somebody will rely on exactly once.
+          action: undo.undoable === false ? undefined : {
             label: 'Undo',
             onClick: () => void undo.run().then(() => Promise.all([reload(), reloadTags()])),
           },

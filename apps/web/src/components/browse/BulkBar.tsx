@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  ChevronsRight, Flag, FolderInput, PauseCircle, PlayCircle, RotateCcw, Tag, Timer,
+  ChevronsRight, Flag, FolderInput, PauseCircle, PlayCircle, Replace, RotateCcw,
+  Tag, Timer, Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -8,6 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -15,9 +17,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  RESCHEDULABLE, bulkFlag, bulkForget, bulkMove, bulkReschedule, bulkRetag, bulkShift,
-  bulkSuspend, targetCount,
-  type Target, type Undo,
+  RESCHEDULABLE, bulkDelete, bulkFlag, bulkForget, bulkMove, bulkReplace, bulkReschedule,
+  bulkRetag, bulkShift, bulkSuspend, replaceCount, targetCount,
+  type ReplaceSpec, type Target, type Undo,
 } from '@/db/queries/browse'
 import type { DeckRow } from '@/db/repo'
 import { FLAG_COLORS, FLAG_NAMES } from './FilterBar'
@@ -34,6 +36,7 @@ const CONFIRM_AT = 50
 type Pending =
   | { kind: 'reschedule' }
   | { kind: 'shift' }
+  | { kind: 'replace' }
   | { kind: 'move' }
   | { kind: 'tag'; add: boolean }
   | { kind: 'confirm'; title: string; body: string; op: () => Promise<Undo> }
@@ -130,6 +133,22 @@ export function BulkBar({
         <Button variant="outline" size="xs" disabled={busy} onClick={() => setPending({ kind: 'move' })}>
           <FolderInput /> Move
         </Button>
+        <Button variant="outline" size="xs" disabled={busy} onClick={() => setPending({ kind: 'replace' })}>
+          <Replace /> Replace
+        </Button>
+        {/* Always confirmed, whatever the count: it is the one operation on
+            this bar with no undo behind it. */}
+        <Button variant="outline" size="xs" disabled={busy}
+                onClick={() => setPending({
+                  kind: 'confirm',
+                  title: 'Delete notes',
+                  body: `Delete the notes behind ${cards}, and every card they make? `
+                    + 'Their answers stay in the log, so re-importing the same notes '
+                    + 'finds their history again — but nothing here brings them back.',
+                  op: () => bulkDelete(target),
+                })}>
+          <Trash2 /> Delete
+        </Button>
       </div>
 
       <BulkDialog
@@ -156,6 +175,10 @@ function BulkDialog({
 }) {
   const [days, setDays] = useState('1')
   const [shift, setShift] = useState('7')
+  const [spec, setSpec] = useState<ReplaceSpec>({
+    find: '', replace: '', field: null, regex: false, matchCase: false,
+  })
+  const [willMatch, setWillMatch] = useState<number | null>(null)
   const [tag, setTag] = useState('')
   const [deckId, setDeckId] = useState('')
   /**
@@ -164,6 +187,17 @@ function BulkDialog({
    * deck badge that says 3 due and hands over nothing.
    */
   const [reschedulable, setReschedulable] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (pending?.kind !== 'replace' || !spec.find.trim()) return setWillMatch(null)
+    let live = true
+    // A regex that does not compile is a typo mid-word, not an error to shout
+    // about — the count simply says nothing until it is finished.
+    void replaceCount(target, spec)
+      .then((n) => live && setWillMatch(n))
+      .catch(() => live && setWillMatch(0))
+    return () => { live = false }
+  }, [pending, target, spec])
 
   useEffect(() => {
     if (pending?.kind !== 'reschedule' && pending?.kind !== 'shift') return setReschedulable(null)
@@ -182,7 +216,10 @@ function BulkDialog({
           <>
             <DialogHeader>
               <DialogTitle>{pending.title}</DialogTitle>
-              <DialogDescription>{pending.body} You can undo this.</DialogDescription>
+              <DialogDescription>
+                {pending.body}
+                {pending.title !== 'Delete notes' && ' You can undo this.'}
+              </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -248,6 +285,59 @@ function BulkDialog({
               <Button disabled={!Number.isFinite(Number(shift)) || !shift.trim() || !reschedulable}
                       onClick={() => onRun(() => bulkShift(target, Number(shift)))}>
                 {Number(shift) < 0 ? 'Advance' : 'Postpone'}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {pending.kind === 'replace' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Find and replace</DialogTitle>
+              <DialogDescription>
+                Rewrites the fields of the notes behind your selection, so it reaches
+                every card of a note you picked one card of. Undoable in one click.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="bulk-find">Find</Label>
+                <Input id="bulk-find" className="font-mono text-xs" value={spec.find}
+                       onChange={(e) => setSpec((x) => ({ ...x, find: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="bulk-replace">Replace with</Label>
+                <Input id="bulk-replace" className="font-mono text-xs" value={spec.replace}
+                       placeholder="leave empty to delete the text"
+                       onChange={(e) => setSpec((x) => ({ ...x, replace: e.target.value }))} />
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-xs">
+                  <Switch checked={spec.regex}
+                          onCheckedChange={(v) => setSpec((x) => ({ ...x, regex: v }))} />
+                  Regular expression
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <Switch checked={spec.matchCase}
+                          onCheckedChange={(v) => setSpec((x) => ({ ...x, matchCase: v }))} />
+                  Match case
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {!spec.find.trim()
+                  ? 'Every field of every selected note.'
+                  : willMatch === null
+                    ? 'Counting…'
+                    : willMatch === 0
+                      ? 'Nothing matches — nothing would change.'
+                      : `${willMatch} ${willMatch === 1 ? 'note' : 'notes'} would change.`}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button disabled={!spec.find.trim() || !willMatch}
+                      onClick={() => onRun(() => bulkReplace(target, spec))}>
+                Replace
               </Button>
             </DialogFooter>
           </>

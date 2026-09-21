@@ -339,3 +339,45 @@ test('occlusion data is parsed tolerantly', () => {
     [0],
   )
 })
+
+// ── {{tts}} ───────────────────────────────────────────────────────────────
+
+test('tts emits a marker the parent can read, keeping the text visible', () => {
+  const nt: NoteType = {
+    id: 'x', name: 'X', fields: ['Front', 'Back'], kind: 'standard', css: '',
+    templates: [{ name: 'Card 1', qfmt: '{{tts en_US:Front}}', afmt: '{{Back}}' }],
+  }
+  const html = renderSide(nt, { Front: 'the mitral valve', Back: 'b' }, 0, 'front')
+  assert.match(html, /data-tts="the mitral valve"/)
+  assert.match(html, /data-tts-lang="en-US"/, 'en_US is a BCP-47 tag once the underscore goes')
+  assert.match(html, /the mitral valve<\/span>/, 'the text stays on the card')
+})
+
+test('tts without a language is still a marker', () => {
+  const nt: NoteType = {
+    id: 'x', name: 'X', fields: ['Front'], kind: 'standard', css: '',
+    templates: [{ name: 'Card 1', qfmt: '{{tts:Front}}', afmt: '' }],
+  }
+  const html = renderSide(nt, { Front: 'aorta' }, 0, 'front')
+  assert.match(html, /data-tts="aorta"/)
+  assert.doesNotMatch(html, /data-tts-lang/)
+})
+
+test('tts strips markup and escapes the attribute', () => {
+  // The attribute is read back with a regex, so a quote inside it would end it
+  // early and hand the speaker half a sentence.
+  const nt: NoteType = {
+    id: 'x', name: 'X', fields: ['Front'], kind: 'standard', css: '',
+    templates: [{ name: 'Card 1', qfmt: '{{tts:Front}}', afmt: '' }],
+  }
+  const html = renderSide(nt, { Front: '<b>say "this"</b>' }, 0, 'front')
+  assert.match(html, /data-tts="say &quot;this&quot;"/)
+})
+
+test('tts on an empty field emits nothing at all', () => {
+  const nt: NoteType = {
+    id: 'x', name: 'X', fields: ['Front'], kind: 'standard', css: '',
+    templates: [{ name: 'Card 1', qfmt: 'x{{tts:Front}}', afmt: '' }],
+  }
+  assert.equal(renderSide(nt, { Front: '' }, 0, 'front').trim(), 'x')
+})

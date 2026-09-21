@@ -483,6 +483,8 @@ export interface DeckRow {
   new: number
   retention_target: number
   max_answer_seconds: number
+  auto_reveal_seconds: number
+  auto_next_seconds: number
   new_per_day: number
   /** Hide a note's other cards until tomorrow once one of them is answered. */
   bury_new: number
@@ -663,27 +665,42 @@ export const deleteDeck = (deckId: string, now = Date.now()) =>
  * reschedules retroactively, because the log records what was actually shown
  * and when, and rewriting that would be a lie.
  */
-export const setDeckOptions = (
-  deckId: string,
-  retention: number,
-  newPerDay: number,
-  burySiblings = true,
-  maxAnswerSeconds = 60,
-) =>
+export interface DeckOptions {
+  retention: number
+  newPerDay: number
+  burySiblings?: boolean
+  maxAnswerSeconds?: number
+  /** Seconds before the answer shows itself. 0 is off, as in Anki. */
+  autoRevealSeconds?: number
+  /** Seconds after that before the next card. 0 is off. */
+  autoNextSeconds?: number
+}
+
+/**
+ * Named rather than positional, and that is not cosmetic: seven numbers and
+ * booleans in a row is a signature where transposing two of them still
+ * compiles and quietly sets the wrong limit.
+ */
+export const setDeckOptions = (deckId: string, o: DeckOptions) =>
   db.run(
     `UPDATE decks SET retention_target = ?, new_per_day = ?, bury_new = ?, bury_reviews = ?,
-            max_answer_seconds = ?, updated_at = ? WHERE id = ?`,
+            max_answer_seconds = ?, auto_reveal_seconds = ?, auto_next_seconds = ?,
+            updated_at = ? WHERE id = ?`,
     [
-      retention,
-      Math.min(9999, Math.max(0, Math.round(newPerDay) || 0)),
+      o.retention,
+      Math.min(9999, Math.max(0, Math.round(o.newPerDay) || 0)),
       // One switch for both columns. They are separate in the schema because
       // Anki separates them, and a second checkbox for "bury new siblings but
       // not review siblings" is a distinction nobody has ever wanted to make.
-      burySiblings ? 1 : 0,
-      burySiblings ? 1 : 0,
+      (o.burySiblings ?? true) ? 1 : 0,
+      (o.burySiblings ?? true) ? 1 : 0,
       // The ceiling on one recorded answer. Clamped rather than trusted: a zero
       // here would log every review as instant and quietly flatten the stats.
-      Math.min(600, Math.max(5, Math.round(maxAnswerSeconds) || 60)),
+      Math.min(600, Math.max(5, Math.round(o.maxAnswerSeconds ?? 60) || 60)),
+      // Auto-advance, where zero is meaningful — it is how you turn it off —
+      // so these clamp to a floor of 0 rather than to a working value.
+      Math.min(600, Math.max(0, Math.round(o.autoRevealSeconds ?? 0) || 0)),
+      Math.min(600, Math.max(0, Math.round(o.autoNextSeconds ?? 0) || 0)),
       Date.now(),
       deckId,
     ],
@@ -767,7 +784,8 @@ export async function deckTree(now = Date.now()): Promise<DeckRow[]> {
            LEFT JOIN intro i ON i.id = d.id
        )
      SELECT t.id, t.parent_id, t.name, t.path, t.depth,
-            dk.retention_target, dk.new_per_day, dk.bury_new, dk.max_answer_seconds, dk.filtered,
+            dk.retention_target, dk.new_per_day, dk.bury_new, dk.max_answer_seconds,
+            dk.auto_reveal_seconds, dk.auto_next_seconds, dk.filtered,
             COALESCE(SUM(c.due), 0) AS due,
             COALESCE(SUM(c.new), 0) AS new
        FROM tree t
@@ -1036,6 +1054,9 @@ export interface StudyCard {
   retentionTarget: number
   /** The deck's ceiling on one answer, in seconds. See `recordReview`. */
   maxAnswerSeconds: number
+  /** Auto-advance, both in seconds and both 0 when off. */
+  autoRevealSeconds: number
+  autoNextSeconds: number
 }
 
 /**
@@ -1070,7 +1091,8 @@ export async function nextCard(deckId?: string | null, now = Date.now()): Promis
     : ''
   const rows = await db.select<any>(
     `SELECT c.*, n.fields, n.tags, n.note_type, n.fma_id, n.deck_id, n.updated_at,
-            d.retention_target, d.max_answer_seconds, d.name AS deck_name,
+            d.retention_target, d.max_answer_seconds,
+            d.auto_reveal_seconds, d.auto_next_seconds, d.name AS deck_name,
             p.name AS parent_name, g.name AS grandparent_name,
             t.id AS nt_id, t.name AS nt_name, t.fields AS nt_fields,
             t.templates AS nt_templates, t.css AS nt_css, t.kind AS nt_kind,
@@ -1114,6 +1136,8 @@ export async function nextCard(deckId?: string | null, now = Date.now()): Promis
     deckName: r.deck_name,
     retentionTarget: r.retention_target,
     maxAnswerSeconds: r.max_answer_seconds,
+    autoRevealSeconds: r.auto_reveal_seconds ?? 0,
+    autoNextSeconds: r.auto_next_seconds ?? 0,
   }
 }
 

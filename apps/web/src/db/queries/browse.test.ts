@@ -327,3 +327,83 @@ test('re: matches through the fields, and the count agrees with the page', async
   assert.equal(rows.length, 2)
   assert.equal(await browse.browseCount(q('re:asp.*in')), rows.length)
 })
+
+// ── find and replace, and delete ──────────────────────────────────────────
+
+test('replace rewrites fields and is undoable', async () => {
+  const undo = await browse.bulkReplace({ terms: q('deck:Thorax') }, {
+    find: 'valve', replace: 'leaflet', field: null, regex: false, matchCase: false,
+  }, NOW)
+  assert.equal(undo.count, 2)
+
+  const [n1] = await db.select<{ fields: string }>(`SELECT fields FROM notes WHERE id = 'n1'`)
+  assert.match(n1!.fields, /Mitral<\/b> leaflet/)
+
+  await undo.run()
+  const [back] = await db.select<{ fields: string }>(`SELECT fields FROM notes WHERE id = 'n1'`)
+  assert.match(back!.fields, /Mitral<\/b> valve/)
+})
+
+test('a literal search is escaped, so a full stop is a full stop', async () => {
+  // Without escaping, `.` matches every character and the note is destroyed.
+  const undo = await browse.bulkReplace({ ids: ['n3:0'] }, {
+    find: 'A.pirin', replace: 'X', field: null, regex: false, matchCase: false,
+  }, NOW)
+  assert.equal(undo.count, 0, 'the dot must not match the "s"')
+})
+
+test('replace is global within a field, not just the first hit', async () => {
+  sqlite.exec(`UPDATE notes SET fields = '{"Front":"a<br>b<br>c","Back":"x"}' WHERE id = 'n3'`)
+  await browse.bulkReplace({ ids: ['n3:0'] }, {
+    find: '<br>', replace: ' ', field: null, regex: false, matchCase: false,
+  }, NOW)
+  const [r] = await db.select<{ fields: string }>(`SELECT fields FROM notes WHERE id = 'n3'`)
+  assert.equal(JSON.parse(r!.fields).Front, 'a b c')
+})
+
+test('replace can be scoped to one field', async () => {
+  await browse.bulkReplace({ ids: ['n1:0'] }, {
+    find: 'i', replace: 'I', field: 'Back', regex: false, matchCase: true,
+  }, NOW)
+  const f = JSON.parse((await db.select<{ fields: string }>(
+    `SELECT fields FROM notes WHERE id = 'n1'`))[0]!.fields)
+  assert.equal(f.Back, 'bIcuspId')
+  assert.match(f.Front, /Mitral/, 'the other field is untouched')
+})
+
+test('the preview count and the operation agree', async () => {
+  const target = { terms: q('') }
+  const spec = { find: 'valve', replace: 'leaflet', field: null, regex: false, matchCase: false }
+  const predicted = await browse.replaceCount(target, spec)
+  const undo = await browse.bulkReplace(target, spec, NOW)
+  assert.equal(predicted, undo.count)
+  assert.equal(predicted, 2)
+})
+
+test('the preview count does not skip every other row', async () => {
+  // A `g` regex carries `lastIndex` between calls, so a shared one matches the
+  // first row, misses the second, matches the third. Two notes hold "valve".
+  assert.equal(await browse.replaceCount({ terms: q('') }, {
+    find: 'valve', replace: '', field: null, regex: true, matchCase: false,
+  }), 2)
+})
+
+test('delete removes the notes and their cards, and tombstones both', async () => {
+  const undo = await browse.bulkDelete({ ids: ['n1:0'] }, NOW)
+  assert.equal(undo.count, 1)
+  assert.equal(undo.undoable, false, 'the toast must not offer a button for this')
+
+  const [notes] = await db.select<{ n: number }>(`SELECT COUNT(*) AS n FROM notes WHERE id = 'n1'`)
+  assert.equal(notes!.n, 0)
+  const [cards] = await db.select<{ n: number }>(`SELECT COUNT(*) AS n FROM cards WHERE note_id = 'n1'`)
+  assert.equal(cards!.n, 0, 'both cards of the note go, not just the selected one')
+
+  // Without tombstones the delete never reaches another device, and the note
+  // comes back on its next push.
+  const stones = await db.select<{ resource: string; key: string }>(
+    `SELECT resource, key FROM tombstones ORDER BY resource, key`,
+  )
+  assert.deepEqual(stones.map((t) => `${t.resource}/${t.key}`), [
+    'card_states/n1:0', 'card_states/n1:1', 'notes/n1',
+  ])
+})
