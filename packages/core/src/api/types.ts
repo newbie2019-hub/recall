@@ -237,6 +237,57 @@ export interface AiRewrite {
   note: string
 }
 
+// ── friends, presence and the weekly board (Phase 14d) ────────────────────
+
+/**
+ * Somebody you study alongside.
+ *
+ * `status` is from **your** side of the row, which is the only side a client
+ * ever needs: `pending_out` is a request you sent, `pending_in` is one waiting
+ * on you. The server decides which by looking at who asked, so a client cannot
+ * accept its own invitation by relabelling it.
+ */
+export interface Friend {
+  /** The friendship row, which is what accept / decline / remove address. */
+  id: string
+  user: { id: string; name: string; avatar: string | null }
+  status: 'accepted' | 'pending_in' | 'pending_out'
+  /**
+   * Seen within the last few minutes. Derived from `last_seen_at`, which any
+   * authenticated request touches — a heartbeat websocket would be a second
+   * presence system to keep honest for a green dot.
+   */
+  online: boolean
+  last_seen_at: string | null
+}
+
+/**
+ * One row of the weekly board.
+ *
+ * ⚠️ This is the one place in the app that compares you to another person.
+ * Everything else — retention, streaks, the goal meter — is measured against
+ * your own past on purpose, because peer comparison helps high achievers and
+ * demotivates everyone else. It is opt-in, friends-only, and the UI must keep
+ * `you` findable without ceremony: no podium, no medals, no "last place".
+ */
+export interface FriendLeaderRow {
+  user_id: string
+  name: string
+  avatar: string | null
+  reviews: number
+  /** Minutes with a card actually on screen, from the synced `duration_ms`. */
+  minutes: number
+  /** So the row can be marked without the client matching ids itself. */
+  is_you: boolean
+}
+
+export interface FriendLeaderboard {
+  /** ISO. The board is a *window*, never all-time — all-time is unwinnable. */
+  period_start: string
+  period_end: string
+  rows: FriendLeaderRow[]
+}
+
 /** Two paragraphs over figures the model was given, never ones it computed. */
 export interface AiBriefing {
   headline: string

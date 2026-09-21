@@ -1,6 +1,7 @@
 import type {
   ApiEnvelope, ApiErrorBody, ApiErrorCode, DeviceIdentity, DeviceSummary,
   AiBriefing, AiCandidate, AiExplanation, AiJob, AiRewrite, AiUsage, AiVerdict,
+  Friend, FriendLeaderboard,
   Session, SyncPayload, SyncPullResult, SyncPushResult,
 } from './types.ts'
 import type { OnboardingAnswers } from '../onboarding.ts'
@@ -263,6 +264,48 @@ export class ApiClient {
    */
   aiBrief(figures: Record<string, unknown>): Promise<AiBriefing> {
     return this.request<AiBriefing>('ai/brief', { method: 'POST', body: { figures } })
+  }
+
+  // ── friends and the weekly board (14d) ──────────────────────────────────
+
+  /**
+   * Everyone you study alongside, plus the requests in both directions.
+   *
+   * One call rather than three: the friends screen shows all three states
+   * together, and three endpoints would be three cursors to keep in step.
+   */
+  friends(): Promise<Friend[]> {
+    return this.request<Friend[]>('friends', { idempotent: true })
+  }
+
+  /**
+   * Ask somebody to be a friend, by the address they signed up with.
+   *
+   * By email rather than by a searchable directory: a name search would let
+   * anybody enumerate the accounts on this server, and nobody asked for that.
+   */
+  addFriend(email: string): Promise<Friend> {
+    return this.request<Friend>('friends', { method: 'POST', body: { email } })
+  }
+
+  acceptFriend(id: string): Promise<Friend> {
+    return this.request<Friend>(`friends/${id}/accept`, { method: 'POST', idempotent: true })
+  }
+
+  /** Decline a request, or remove a friendship. The same row, either way. */
+  removeFriend(id: string): Promise<void> {
+    return this.request<void>(`friends/${id}`, { method: 'DELETE', idempotent: true })
+  }
+
+  /**
+   * The week, you and your friends.
+   *
+   * Counted on the server from the synced review log, so a device that has not
+   * synced is simply behind rather than absent — and so nobody can report a
+   * number their own collection does not support.
+   */
+  friendLeaderboard(days = 7): Promise<FriendLeaderboard> {
+    return this.request<FriendLeaderboard>(`friends/leaderboard?days=${days}`, { idempotent: true })
   }
 
   // ── the generation pipeline (10c) ───────────────────────────────────────
